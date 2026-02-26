@@ -90,7 +90,7 @@ class OpenAIGenerator(BaseGenerator):
 class OllamaGenerator(BaseGenerator):
     """Generate answers using a local Ollama server."""
 
-    def __init__(self, model: str = "llama3"):
+    def __init__(self, model: str = "llama3.2:1b"):
         import requests  # noqa: F401 — validate availability
 
         settings = get_settings()
