@@ -70,13 +70,20 @@ class RAGPipeline:
     # Indexing
     # ------------------------------------------------------------------
 
-    def index(self, batch_size: int = 64) -> int:
+    def index(self, batch_size: int = 64, data_dir: str | None = None) -> int:
         """
         Load all documents, chunk them, embed, and store in the vector DB.
 
+        Parameters
+        ----------
+        batch_size : int
+            Number of chunks to embed in one go.
+        data_dir : str, optional
+            Override the default data directory.
+
         Returns the total number of indexed chunks.
         """
-        docs = load_documents()
+        docs = load_documents(data_dir)
         if not docs:
             logger.warning("No documents found — nothing to index.")
             return 0

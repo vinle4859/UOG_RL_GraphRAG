@@ -36,13 +36,64 @@ def main(log_level: str):
 
 
 @main.command()
-def index():
+@click.option("--data-dir", default=None, help="Directory with .json or .txt files (default: data/processed/).")
+def index(data_dir: str | None):
     """Index all documents for standard RAG."""
     from src.rag.pipeline import RAGPipeline
 
     pipe = RAGPipeline()
-    n = pipe.index()
+    n = pipe.index(data_dir=data_dir)
     click.echo(f"Indexed {n} chunks.")
+
+
+@main.command()
+@click.argument("question")
+@click.option("--data-dir", default=None, help="Directory with .json or .txt files (default: data/processed/).")
+@click.option("--top-k", default=5, help="Number of chunks to retrieve.")
+def retrieve(question: str, data_dir: str | None, top_k: int):
+    """Retrieve relevant chunks WITHOUT calling an LLM (no API key needed)."""
+    from src.rag.embedder import get_embedder
+    from src.rag.vectorstore import FAISSVectorStore
+    from src.rag.retriever import Retriever
+    from src.data.loader import load_documents
+    from src.data.chunker import TokenChunker
+
+    # Load & index into in-memory FAISS
+    docs = load_documents(data_dir)
+    if not docs:
+        click.echo("No documents found. Check --data-dir or data/processed/.")
+        return
+    click.echo(f"Loaded {len(docs)} documents.")
+
+    chunker = TokenChunker()
+    chunks = chunker.chunk_documents(docs)
+    embedder = get_embedder()
+    store = FAISSVectorStore()
+
+    embeddings = embedder.embed([c.text for c in chunks])
+    store.add(
+        [c.chunk_id for c in chunks],
+        [c.text for c in chunks],
+        embeddings,
+        [{"doc_id": c.doc_id, "title": c.metadata.get("title", "")} for c in chunks],
+    )
+    click.echo(f"Indexed {store.count()} chunks.")
+
+    # Retrieve
+    retriever = Retriever(embedder=embedder, vectorstore=store, top_k=top_k)
+    results = retriever.retrieve(question)
+
+    click.echo(f"\n{'=' * 60}")
+    click.echo(f"Question: {question}")
+    click.echo(f"Top {len(results)} retrieved chunks:")
+    click.echo(f"{'=' * 60}")
+    for i, r in enumerate(results, 1):
+        doc_id = r.chunk_id.split('__')[0]
+        title = (r.metadata or {}).get('title', '')
+        click.echo(f"\n--- #{i}  score={r.score:.4f}  doc={doc_id} ---")
+        if title:
+            click.echo(f"Title: {title}")
+        click.echo(r.text[:500])
 
 
 @main.command("build-graph")
@@ -75,7 +126,11 @@ def query(question: str, pipeline: str, top_k: int):
     click.echo(f"Pipeline: {pipeline}")
     click.echo(f"Question: {question}")
     click.echo(f"{'=' * 60}")
-    click.echo(result.answer)
+    click.echo(f"\nAnswer:\n{result.answer}")
+    click.echo(f"\n--- Retrieved {len(result.retrieved_chunks)} chunks ---")
+    for i, r in enumerate(result.retrieved_chunks, 1):
+        doc_id = r.chunk_id.split('__')[0]
+        click.echo(f"  #{i} score={r.score:.4f} doc={doc_id} chunk={r.chunk_id}")
 
 
 @main.command()
