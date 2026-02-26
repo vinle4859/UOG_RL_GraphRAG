@@ -1,0 +1,100 @@
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+.Python
+develop-eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ========================
+# Virtual Environments
+# ========================
+.venv/
+venv/
+ENV/
+env/
+
+# ========================
+# IDE / Editor
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ========================
+# Jupyter Notebooks
+# ========================
+.ipynb_checkpoints/
+
+# ========================
+# Data & Model Artifacts
+# ========================
+data/raw/*
+data/processed/*
+data/embeddings/*
+data/graphs/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/embeddings/.gitkeep
+!data/graphs/.gitkeep
+
+# Keep sample data (committed for team testing)
+!data/sample/
+!data/sample/**
+
+models/
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.h5
+*.onnx
+
+# ========================
+# Vector Store Persistence
+# ========================
+chroma_db/
+faiss_index/
+*.index
+
+# ========================
+# Logs & Outputs
+# ========================
+logs/
+*.log
+outputs/
+results/*.json
+results/*.csv
+!results/.gitkeep
+
+# ========================
+# Environment & Secrets
+# ========================
+.env
+.env.local
+*.pem
+secrets/
+
+# ========================
+# OS-specific
+# ========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ========================
+# Misc
+# ========================
+*.bak
+*.tmp

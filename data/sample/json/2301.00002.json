@@ -1,0 +1,11 @@
+{
+  "doc_id": "2301.00002",
+  "title": "Attention Is All You Need",
+  "authors": ["Ashish Vaswani", "Noam Shazeer", "Niki Parmar", "Jakob Uszkoreit"],
+  "abstract": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+  "categories": ["cs.CL", "cs.LG"],
+  "year": 2023,
+  "full_text": "Attention Is All You Need\n\nAbstract\nThe dominant sequence transduction models are based on complex recurrent or convolutional neural networks. We propose the Transformer architecture based solely on attention mechanisms.\n\n1 Introduction\nRecurrent neural networks, long short-term memory and gated recurrent units have been the dominant approaches for sequence modeling. The Transformer uses multi-head self-attention to capture dependencies regardless of distance in the sequence.\n\n2 Model Architecture\nThe Transformer follows an encoder-decoder structure using stacked self-attention and point-wise fully connected layers. Scaled dot-product attention computes Attention(Q,K,V) = softmax(QK^T / sqrt(d_k)) V.\n\nMulti-head attention allows the model to jointly attend to information from different representation subspaces at different positions.\n\n3 Training\nWe trained on the WMT 2014 English-German and English-French translation tasks. The model achieves state-of-the-art BLEU scores while requiring significantly less training time.\n\n4 Conclusion\nThe Transformer is the first sequence transduction model based entirely on attention. It can be trained significantly faster than architectures based on recurrent or convolutional layers.",
+  "sections": ["Introduction", "Model Architecture", "Training", "Conclusion"],
+  "source_file": "2301.00002.pdf"
+}

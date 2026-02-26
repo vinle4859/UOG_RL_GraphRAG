@@ -1,0 +1,11 @@
+{
+  "doc_id": "2301.00001",
+  "title": "Proximal Policy Optimization Algorithms",
+  "authors": ["John Schulman", "Filip Wolski", "Prafulla Dhariwal"],
+  "abstract": "We propose a new family of policy gradient methods for reinforcement learning, which alternate between sampling data through interaction with the environment, and optimizing a clipped surrogate objective function using stochastic gradient ascent.",
+  "categories": ["cs.LG", "cs.AI"],
+  "year": 2023,
+  "full_text": "Proximal Policy Optimization Algorithms\n\nAbstract\nWe propose a new family of policy gradient methods for reinforcement learning, which alternate between sampling data through interaction with the environment, and optimizing a clipped surrogate objective function using stochastic gradient ascent.\n\n1 Introduction\nReinforcement learning is a type of machine learning where an agent learns to make decisions by interacting with an environment to maximize cumulative reward. Policy gradient methods are a popular approach because they directly optimize the policy.\n\nPPO uses a clipped objective to prevent large policy updates that could destabilize training. The clipping mechanism ensures that the new policy stays close to the old policy.\n\n2 Method\nThe PPO-Clip objective is defined as L_CLIP = E[min(r*A, clip(r, 1-epsilon, 1+epsilon)*A)] where r is the probability ratio between new and old policies and A is the advantage estimate.\n\n3 Experiments\nWe tested PPO on a suite of benchmark tasks including continuous control (MuJoCo), Atari 2600 games, and robotic manipulation. PPO achieves comparable or better performance than TRPO while being much simpler to implement.\n\n4 Conclusion\nPPO provides a simple yet effective approach to policy optimization. Its clipping mechanism avoids the complexity of trust region methods while maintaining stable learning.",
+  "sections": ["Introduction", "Method", "Experiments", "Conclusion"],
+  "source_file": "2301.00001.pdf"
+}

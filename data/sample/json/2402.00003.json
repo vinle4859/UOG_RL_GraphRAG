@@ -1,0 +1,11 @@
+{
+  "doc_id": "2402.00003",
+  "title": "Graph Neural Networks: A Review of Methods and Applications",
+  "authors": ["Jie Zhou", "Ganqu Cui", "Shengding Hu"],
+  "abstract": "Graph neural networks are connectionist models that capture the dependence of graphs via message passing between the nodes of graphs.",
+  "categories": ["cs.LG", "cs.AI"],
+  "year": 2024,
+  "full_text": "Graph Neural Networks: A Review\n\nAbstract\nGraph neural networks (GNNs) are a class of deep learning methods designed to perform inference on data described by graphs.\n\n1 Introduction\nMany real-world datasets are naturally represented as graphs: social networks, molecular structures, citation networks. GNNs aggregate information from a node's neighbors using a message-passing scheme.\n\n2 Methods\nPopular GNN variants include Graph Convolutional Networks (GCN), GraphSAGE, and Graph Attention Networks (GAT). Each differs in how they aggregate neighbor information.\n\nGCN uses spectral convolutions on graphs. GraphSAGE samples fixed-size neighborhoods and aggregates features. GAT uses attention mechanisms to weight neighbor contributions.\n\n3 Applications\nGNNs have been applied to social network analysis, molecular property prediction, recommendation systems, traffic forecasting, and knowledge graph completion.\n\n4 Conclusion\nGNNs provide a powerful framework for learning on graph-structured data. Future directions include scalability to large graphs and interpretability of learned representations.",
+  "sections": ["Introduction", "Methods", "Applications", "Conclusion"],
+  "source_file": "2402.00003.pdf"
+}

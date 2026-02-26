@@ -1,0 +1,27 @@
+Graph Neural Networks: A Review of Methods and Applications
+
+Graph neural networks (GNNs) are a class of deep learning methods designed to
+perform inference on data described by graphs.
+
+1 Introduction
+Many real-world datasets are naturally represented as graphs: social networks,
+molecular structures, citation networks. GNNs aggregate information from a
+node's neighbors using a message-passing scheme.
+
+2 Methods
+Popular GNN variants include Graph Convolutional Networks (GCN), GraphSAGE,
+and Graph Attention Networks (GAT). Each differs in how they aggregate neighbor
+information.
+
+GCN uses spectral convolutions on graphs. GraphSAGE samples fixed-size
+neighborhoods and aggregates features. GAT uses attention mechanisms to weight
+neighbor contributions.
+
+3 Applications
+GNNs have been applied to social network analysis, molecular property prediction,
+recommendation systems, traffic forecasting, and knowledge graph completion.
+
+4 Conclusion
+GNNs provide a powerful framework for learning on graph-structured data. Future
+directions include scalability to large graphs and interpretability of learned
+representations.
