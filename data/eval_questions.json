@@ -1,0 +1,62 @@
+[
+  {
+    "question": "What is Proximal Policy Optimization (PPO)?",
+    "reference_answer": "PPO is a family of policy gradient methods for reinforcement learning that uses a clipped surrogate objective function to ensure stable policy updates. It alternates between sampling data through environment interaction and optimizing the clipped objective using stochastic gradient ascent.",
+    "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "How does the clipping mechanism in PPO work?",
+    "reference_answer": "PPO uses a clipped objective L_CLIP = E[min(r*A, clip(r, 1-epsilon, 1+epsilon)*A)] where r is the probability ratio between new and old policies and A is the advantage estimate. The clipping prevents large policy updates that could destabilize training by keeping the new policy close to the old policy.",
+    "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "What environments was PPO tested on?",
+    "reference_answer": "PPO was tested on a suite of benchmark tasks including continuous control tasks in MuJoCo, Atari 2600 games, and robotic manipulation tasks.",
+    "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "How does PPO compare to TRPO?",
+    "reference_answer": "PPO achieves comparable or better performance than TRPO while being much simpler to implement. PPO's clipping mechanism avoids the complexity of trust region methods while maintaining stable learning.",
+    "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "What is the advantage of policy gradient methods in reinforcement learning?",
+    "reference_answer": "Policy gradient methods are popular in reinforcement learning because they directly optimize the policy, allowing the agent to learn decision-making by interacting with the environment to maximize cumulative reward.",
+    "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "What is the attention mechanism in Transformers?",
+    "reference_answer": "The attention mechanism computes a weighted sum of value vectors, where the weights are derived from the compatibility of query and key vectors using scaled dot-product attention. This allows the model to focus on relevant parts of the input sequence.",
+    "relevant_doc_ids": ["2301.00002"]
+  },
+  {
+    "question": "What are the key components of a Transformer architecture?",
+    "reference_answer": "The Transformer architecture consists of an encoder-decoder structure with multi-head self-attention layers, feed-forward networks, positional encodings, and layer normalization. The self-attention mechanism allows it to process all positions in parallel.",
+    "relevant_doc_ids": ["2301.00002"]
+  },
+  {
+    "question": "What are the main challenges with graph neural networks?",
+    "reference_answer": "Graph neural networks face challenges including over-smoothing with deeper layers, scalability to large graphs, handling heterogeneous graph structures, and generalization across different graph topologies.",
+    "relevant_doc_ids": ["2402.00003"]
+  },
+  {
+    "question": "What is reinforcement learning?",
+    "reference_answer": "Reinforcement learning is a type of machine learning where an agent learns to make decisions by interacting with an environment to maximize cumulative reward through trial and error.",
+    "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "What is the relationship between PPO and policy gradient methods?",
+    "reference_answer": "PPO is a specific family within policy gradient methods. While policy gradient methods directly optimize the policy, PPO improves upon basic policy gradients by using a clipped surrogate objective that prevents destructively large updates, making training more stable.",
+    "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "What surrogate objective does PPO use?",
+    "reference_answer": "PPO uses a clipped surrogate objective function defined as L_CLIP = E[min(r*A, clip(r, 1-epsilon, 1+epsilon)*A)], where r is the probability ratio between the new and old policies, A is the advantage estimate, and epsilon controls the clipping range.",
+    "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "Why is PPO considered simpler than trust region methods?",
+    "reference_answer": "PPO provides a simple yet effective approach to policy optimization through its clipping mechanism, which avoids the complexity of computing and enforcing explicit trust region constraints as required by methods like TRPO, while still maintaining stable learning.",
+    "relevant_doc_ids": ["2301.00001"]
+  }
+]

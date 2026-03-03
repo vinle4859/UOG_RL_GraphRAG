@@ -25,11 +25,16 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import time
 from dataclasses import dataclass, field
 
-from src.config import get_settings
+from src.config import LLMProvider, get_settings
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_DELAY = 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -93,15 +98,27 @@ class EntityExtractor:
     """
     Extract entities and relations from text chunks via an LLM.
 
+    Supports both OpenAI and Ollama backends based on the configured
+    ``LLM_PROVIDER`` in settings.  Includes retry logic and JSON repair
+    for smaller / local models that may produce malformed output.
+
     Parameters
     ----------
-    model : str
-        LLM model name (e.g. "gpt-4o-mini").
+    model : str, optional
+        Override the LLM model name.  If *None*, a sensible default is
+        chosen based on the provider (gpt-4o-mini for OpenAI, qwen2.5:7b
+        for Ollama).
     """
 
-    def __init__(self, model: str = "gpt-4o-mini"):
-        self.model = model
+    _DEFAULT_MODELS = {
+        LLMProvider.OPENAI: "gpt-4o-mini",
+        LLMProvider.OLLAMA: "qwen2.5:7b",
+    }
+
+    def __init__(self, model: str | None = None):
         self._settings = get_settings()
+        self._provider = self._settings.llm_provider
+        self.model = model or self._DEFAULT_MODELS.get(self._provider, "gpt-4o-mini")
 
     def extract(self, chunk_id: str, text: str) -> ExtractionResult:
         """
@@ -134,7 +151,30 @@ class EntityExtractor:
     # ------------------------------------------------------------------
 
     def _call_llm(self, text: str) -> str:
-        """Call the configured LLM and return the raw response string."""
+        """Call the configured LLM and return the raw response string.
+
+        Routes to OpenAI or Ollama based on ``self._provider``.
+        Includes retry logic with exponential back-off.
+        """
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                if self._provider == LLMProvider.OLLAMA:
+                    return self._call_ollama(text)
+                else:
+                    return self._call_openai(text)
+            except Exception:
+                if attempt == MAX_RETRIES:
+                    raise
+                logger.warning(
+                    "LLM call attempt %d/%d failed — retrying in %.1fs …",
+                    attempt, MAX_RETRIES, RETRY_DELAY * attempt,
+                )
+                time.sleep(RETRY_DELAY * attempt)
+        # unreachable, but keeps mypy happy
+        raise RuntimeError("LLM call failed after retries")
+
+    def _call_openai(self, text: str) -> str:
+        """Call the OpenAI Chat Completions API."""
         from openai import OpenAI
 
         client = OpenAI(api_key=self._settings.openai_api_key)
@@ -149,12 +189,55 @@ class EntityExtractor:
         )
         return response.choices[0].message.content
 
+    def _call_ollama(self, text: str) -> str:
+        """Call a local Ollama server."""
+        import requests
+
+        prompt = f"{EXTRACTION_SYSTEM_PROMPT}\n\n{text}"
+        resp = requests.post(
+            f"{self._settings.ollama_base_url}/api/generate",
+            json={"model": self.model, "prompt": prompt, "stream": False},
+            timeout=180,
+        )
+        resp.raise_for_status()
+        return resp.json()["response"]
+
+    @staticmethod
+    def _repair_json(raw: str) -> str:
+        """Attempt to extract valid JSON from a potentially messy LLM response.
+
+        Handles common issues with smaller models:
+        - Markdown code fences (```json ... ```)
+        - Leading/trailing text around the JSON object
+        """
+        # Strip markdown fences
+        cleaned = re.sub(r"```(?:json)?\s*", "", raw)
+        cleaned = cleaned.strip().rstrip("`")
+
+        # Try to find the outermost { ... }
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            cleaned = cleaned[start : end + 1]
+
+        return cleaned
+
     @staticmethod
     def _parse_response(chunk_id: str, raw: str) -> ExtractionResult:
-        """Parse the LLM JSON response into an ExtractionResult."""
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
+        """Parse the LLM JSON response into an ExtractionResult.
+
+        Includes JSON repair for malformed output from smaller models.
+        """
+        # First try raw, then try repaired
+        data = None
+        for attempt_raw in (raw, EntityExtractor._repair_json(raw)):
+            try:
+                data = json.loads(attempt_raw)
+                break
+            except json.JSONDecodeError:
+                continue
+
+        if data is None:
             logger.warning("Invalid JSON from LLM for chunk %s — skipping.", chunk_id)
             return ExtractionResult(chunk_id=chunk_id)
 

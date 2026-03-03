@@ -98,14 +98,37 @@ def rouge_scores(prediction: str, reference: str) -> dict[str, float]:
     }
 
 
+FAITHFULNESS_PROMPT = """\
+You are an impartial judge evaluating whether an answer is faithfully grounded
+in the provided context.  A faithful answer only makes claims that are
+supported by the context — it does not hallucinate or add information.
+
+Context:
+{context}
+
+Answer:
+{answer}
+
+Rate the faithfulness of the answer on a scale from 0.0 to 1.0:
+- 1.0 = every claim is directly supported by the context
+- 0.5 = some claims are supported, some are not
+- 0.0 = the answer contradicts or is unrelated to the context
+
+Respond with ONLY a single number between 0.0 and 1.0, nothing else.
+"""
+
+
 def faithfulness_score(
     answer: str,
     context: str,
-    model: str = "gpt-4o-mini",
+    model: str | None = None,
 ) -> float:
     """
     LLM-as-judge: rate how faithfully the *answer* is grounded in the
     *context* on a scale of 0–1.
+
+    Supports both OpenAI and Ollama backends based on the configured
+    ``LLM_PROVIDER``.
 
     Parameters
     ----------
@@ -113,19 +136,53 @@ def faithfulness_score(
         The generated answer.
     context : str
         The retrieval context provided to the generator.
-    model : str
-        LLM to use as judge.
+    model : str, optional
+        LLM to use as judge.  Defaults per provider.
 
     Returns
     -------
     float
         Score in [0, 1].
-
-    TODO
-    ----
-    - [ ] Implement the actual LLM call.
-    - [ ] Consider using a cheaper / faster judge model.
     """
-    logger.warning("faithfulness_score is a stub — returning 0.0")
-    # TODO: Implement via structured LLM prompt
-    return 0.0
+    import re
+
+    from src.config import LLMProvider, get_settings
+
+    settings = get_settings()
+    prompt = FAITHFULNESS_PROMPT.format(context=context, answer=answer)
+
+    try:
+        if settings.llm_provider == LLMProvider.OLLAMA:
+            import requests
+
+            ollama_model = model or "qwen2.5:7b"
+            resp = requests.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json={"model": ollama_model, "prompt": prompt, "stream": False},
+                timeout=120,
+            )
+            resp.raise_for_status()
+            raw = resp.json()["response"].strip()
+        else:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=settings.openai_api_key)
+            response = client.chat.completions.create(
+                model=model or "gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=10,
+            )
+            raw = response.choices[0].message.content.strip()
+
+        # Extract a float from the response
+        match = re.search(r"(\d+\.?\d*)", raw)
+        if match:
+            score = float(match.group(1))
+            return max(0.0, min(1.0, score))
+        logger.warning("Could not parse faithfulness score from: %s", raw)
+        return 0.0
+
+    except Exception:
+        logger.exception("Faithfulness scoring failed — returning 0.0")
+        return 0.0

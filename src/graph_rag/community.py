@@ -200,18 +200,32 @@ def summarise_community(
         f"{context}\n\nSummary:"
     )
 
-    # TODO: Replace with provider-agnostic generator call
-    from openai import OpenAI
-    from src.config import get_settings
+    from src.config import LLMProvider, get_settings
 
     settings = get_settings()
-    client = OpenAI(api_key=settings.openai_api_key)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-        max_tokens=300,
-    )
-    summary = response.choices[0].message.content.strip()
+
+    if settings.llm_provider == LLMProvider.OLLAMA:
+        import requests
+
+        ollama_model = model if model != "gpt-4o-mini" else "qwen2.5:7b"
+        resp = requests.post(
+            f"{settings.ollama_base_url}/api/generate",
+            json={"model": ollama_model, "prompt": prompt, "stream": False},
+            timeout=180,
+        )
+        resp.raise_for_status()
+        summary = resp.json()["response"].strip()
+    else:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.openai_api_key)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=300,
+        )
+        summary = response.choices[0].message.content.strip()
+
     community.summary = summary
     return summary
