@@ -127,8 +127,15 @@ def query(question: str, pipeline: str, top_k: int):
     click.echo(f"Question: {question}")
     click.echo(f"{'=' * 60}")
     click.echo(f"\nAnswer:\n{result.answer}")
-    click.echo(f"\n--- Retrieved {len(result.retrieved_chunks)} chunks ---")
-    for i, r in enumerate(result.retrieved_chunks, 1):
+    # Handle both RAGResult (retrieved_chunks) and GraphRAGResult (search_result)
+    if hasattr(result, 'retrieved_chunks'):
+        chunks = result.retrieved_chunks
+    elif hasattr(result, 'search_result') and result.search_result:
+        chunks = result.search_result.chunk_results
+    else:
+        chunks = []
+    click.echo(f"\n--- Retrieved {len(chunks)} chunks ---")
+    for i, r in enumerate(chunks, 1):
         doc_id = r.chunk_id.split('__')[0]
         click.echo(f"  #{i} score={r.score:.4f} doc={doc_id} chunk={r.chunk_id}")
 

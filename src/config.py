@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     azure_openai_api_key: Optional[str] = None
     azure_openai_deployment_name: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:7b"
 
     # --- Embedding ---
     embedding_provider: EmbeddingProvider = EmbeddingProvider.SENTENCE_TRANSFORMERS

@@ -15,10 +15,14 @@ Retrieval Strategies
 2. **Global Search** — Match the query against community summaries to find
    the most relevant community, then surface its member entities and their
    relations.
-3. **Hybrid** — Combine both local and global search results.
+3. **Graph-Only Search** — Pure graph retrieval with NO vector store.
+   Embeds entity labels, finds closest entities to the query, and expands
+   by hops.  This mode enables a fair benchmark against standard RAG by
+   isolating the graph's contribution without overlapping vector search.
+4. **Hybrid** — Combine both local and global search results.
 
-These strategies mirror the "local" and "global" search modes described in
-Microsoft's GraphRAG paper.
+These strategies mirror and extend the "local" and "global" search modes
+described in Microsoft's GraphRAG paper.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ class SearchMode(str, Enum):
     LOCAL = "local"
     GLOBAL = "global"
     HYBRID = "hybrid"
+    GRAPH_ONLY = "graph_only"
 
 
 @dataclass
@@ -164,6 +169,64 @@ class GraphRetriever:
     # Hybrid
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Graph-Only Search
+    # ------------------------------------------------------------------
+
+    def graph_only_search(self, query: str, top_k: int | None = None) -> GraphSearchResult:
+        """
+        Pure graph retrieval — NO vector store involved.
+
+        Steps:
+        1. Embed the query and find the closest entity by comparing
+           the query embedding with entity label embeddings.
+        2. Expand from those seed entities by N hops.
+        3. Return graph context (relations) as the retrieval result.
+
+        This mode exists so the benchmark can compare:
+        - **RAG** (vector only)
+        - **GraphRAG graph_only** (graph only — no vector overlap)
+        - **GraphRAG local** (vector + graph)
+        - **GraphRAG global** (community summaries)
+        """
+        import numpy as np
+
+        k = top_k or self.top_k
+
+        if not self.graph.nodes:
+            logger.warning("Graph is empty — nothing to search.")
+            return GraphSearchResult()
+
+        # Embed query and graph entity labels
+        node_keys = list(self.graph.nodes())
+        node_labels = [
+            self.graph.nodes[n].get("label", n) for n in node_keys
+        ]
+        query_emb = self.embedder.embed([query])[0]
+        label_embs = self.embedder.embed(node_labels)
+
+        # Cosine similarity to find top-k seed entities
+        sims = np.dot(label_embs, query_emb) / (
+            np.linalg.norm(label_embs, axis=1) * np.linalg.norm(query_emb) + 1e-9
+        )
+        top_indices = np.argsort(sims)[-k:][::-1]
+        seed_entities = {node_keys[i] for i in top_indices}
+
+        # Expand by hops
+        expanded: set[str] = set()
+        for ent in seed_entities:
+            if ent in self.graph:
+                ego = nx.ego_graph(self.graph, ent, radius=self.expansion_hops)
+                expanded.update(ego.nodes())
+
+        graph_context = self._build_graph_context(expanded)
+
+        return GraphSearchResult(graph_context=graph_context)
+
+    # ------------------------------------------------------------------
+    # Dispatch
+    # ------------------------------------------------------------------
+
     def retrieve(
         self, query: str, mode: SearchMode = SearchMode.LOCAL, top_k: int | None = None,
     ) -> GraphSearchResult:
@@ -172,6 +235,8 @@ class GraphRetriever:
             return self.local_search(query, top_k=top_k)
         elif mode == SearchMode.GLOBAL:
             return self.global_search(query, top_n=top_k or self.top_k)
+        elif mode == SearchMode.GRAPH_ONLY:
+            return self.graph_only_search(query, top_k=top_k)
         elif mode == SearchMode.HYBRID:
             local = self.local_search(query, top_k=top_k)
             glob = self.global_search(query, top_n=top_k or self.top_k)
