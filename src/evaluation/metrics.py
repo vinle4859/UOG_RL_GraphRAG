@@ -24,9 +24,19 @@ notebooks and scripts.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Sequence
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_faithfulness_score(raw: str) -> float:
+    """Extract and clamp a numeric faithfulness score from raw LLM output."""
+    match = re.search(r"(\d+\.?\d*)", raw)
+    if not match:
+        return 0.0
+    score = float(match.group(1))
+    return max(0.0, min(1.0, score))
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +154,6 @@ def faithfulness_score(
     float
         Score in [0, 1].
     """
-    import re
-
     from src.config import LLMProvider, get_settings
 
     settings = get_settings()
@@ -155,7 +163,7 @@ def faithfulness_score(
         if settings.llm_provider == LLMProvider.OLLAMA:
             import requests
 
-            ollama_model = model or "qwen2.5:7b"
+            ollama_model = model or settings.ollama_model
             resp = requests.post(
                 f"{settings.ollama_base_url}/api/generate",
                 json={"model": ollama_model, "prompt": prompt, "stream": False},
@@ -175,11 +183,9 @@ def faithfulness_score(
             )
             raw = response.choices[0].message.content.strip()
 
-        # Extract a float from the response
-        match = re.search(r"(\d+\.?\d*)", raw)
-        if match:
-            score = float(match.group(1))
-            return max(0.0, min(1.0, score))
+        score = _parse_faithfulness_score(raw)
+        if score > 0.0 or raw.strip().startswith("0"):
+            return score
         logger.warning("Could not parse faithfulness score from: %s", raw)
         return 0.0
 
