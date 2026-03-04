@@ -7,7 +7,12 @@ Tests — Evaluation Metrics
 ===========================
 """
 
-from src.evaluation.metrics import mean_reciprocal_rank, precision_at_k, recall_at_k
+from src.evaluation.metrics import (
+    _parse_faithfulness_score,
+    mean_reciprocal_rank,
+    precision_at_k,
+    recall_at_k,
+)
 
 
 class TestRetrievalMetrics:
@@ -42,3 +47,19 @@ class TestRetrievalMetrics:
         retrieved = ["x", "y", "z"]
         relevant = {"a"}
         assert mean_reciprocal_rank(retrieved, relevant) == 0.0
+
+
+class TestFaithfulnessParsing:
+    """Test parsing for LLM-as-judge numeric responses."""
+
+    def test_parse_plain_number(self):
+        assert _parse_faithfulness_score("0.83") == 0.83
+
+    def test_parse_number_with_text(self):
+        assert _parse_faithfulness_score("Score: 0.6") == 0.6
+
+    def test_parse_clamps_high_values(self):
+        assert _parse_faithfulness_score("1.9") == 1.0
+
+    def test_parse_invalid_returns_zero(self):
+        assert _parse_faithfulness_score("not a number") == 0.0

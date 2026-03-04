@@ -143,7 +143,19 @@ def query(question: str, pipeline: str, top_k: int):
 @main.command()
 @click.argument("questions_path")
 @click.option("--output", default="results/benchmark_report.csv", help="Output CSV path.")
-def benchmark(questions_path: str, output: str):
+@click.option(
+    "--graphrag-mode",
+    "graphrag_modes",
+    multiple=True,
+    type=click.Choice(["local", "global", "graph_only", "hybrid"]),
+    help="GraphRAG mode(s) to evaluate. Repeat option for multiple modes."
+)
+@click.option(
+    "--faithfulness/--no-faithfulness",
+    default=False,
+    help="Enable LLM-as-judge faithfulness scoring (slower, extra LLM calls).",
+)
+def benchmark(questions_path: str, output: str, graphrag_modes: tuple[str, ...], faithfulness: bool):
     """Run side-by-side benchmark evaluation."""
     from pathlib import Path
     from src.evaluation.benchmark import BenchmarkRunner
@@ -155,7 +167,13 @@ def benchmark(questions_path: str, output: str):
     graphrag_pipe = GraphRAGPipeline()
     graphrag_pipe.load_graph()
 
-    runner = BenchmarkRunner(rag_pipeline=rag_pipe, graphrag_pipeline=graphrag_pipe)
+    modes = list(graphrag_modes) if graphrag_modes else None
+    runner = BenchmarkRunner(
+        rag_pipeline=rag_pipe,
+        graphrag_pipeline=graphrag_pipe,
+        graphrag_modes=modes,
+        compute_faithfulness=faithfulness,
+    )
     df = runner.run(questions_path)
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)

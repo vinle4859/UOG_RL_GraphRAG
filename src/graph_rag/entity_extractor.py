@@ -110,15 +110,15 @@ class EntityExtractor:
         for Ollama).
     """
 
-    _DEFAULT_MODELS = {
-        LLMProvider.OPENAI: "gpt-4o-mini",
-        LLMProvider.OLLAMA: "qwen2.5:7b",
-    }
-
     def __init__(self, model: str | None = None):
         self._settings = get_settings()
         self._provider = self._settings.llm_provider
-        self.model = model or self._DEFAULT_MODELS.get(self._provider, "gpt-4o-mini")
+        default_model = (
+            self._settings.ollama_model
+            if self._provider == LLMProvider.OLLAMA
+            else "gpt-4o-mini"
+        )
+        self.model = model or default_model
 
     def extract(self, chunk_id: str, text: str) -> ExtractionResult:
         """

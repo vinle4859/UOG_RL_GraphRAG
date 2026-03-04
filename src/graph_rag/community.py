@@ -207,7 +207,7 @@ def summarise_community(
     if settings.llm_provider == LLMProvider.OLLAMA:
         import requests
 
-        ollama_model = model if model != "gpt-4o-mini" else "qwen2.5:7b"
+        ollama_model = model if model != "gpt-4o-mini" else settings.ollama_model
         resp = requests.post(
             f"{settings.ollama_base_url}/api/generate",
             json={"model": ollama_model, "prompt": prompt, "stream": False},
