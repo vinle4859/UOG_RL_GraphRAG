@@ -63,7 +63,7 @@ This project builds **both** pipelines from scratch (no Microsoft GraphRAG libra
                     │                           │
               ┌─────▼───────────────────────────▼──────┐
               │         Evaluation & Benchmark         │
-              │  (Precision, Recall, ROUGE, Latency)   │
+              │ (LLM Judge + Efficiency + Golden Set) │
               └────────────────────────────────────────┘
 ```
 
@@ -150,7 +150,7 @@ UOG_RL_GraphRAG/
 | **Community detection** | Leiden algorithm | Best quality per Microsoft GraphRAG paper | Louvain (fallback) |
 | **LLM** | OpenAI GPT-4o-mini | Cost-effective, high quality | Ollama/local models (option) |
 | **Orchestration** | Custom Python (no LangChain for core) | Full control, educational value | LangChain (used lightly for LLM wrappers) |
-| **Evaluation** | Custom metrics + ROUGE | Transparent, reproducible | RAGAS, TruLens |
+| **Evaluation** | 3-tier benchmark (LLM judge + efficiency + small golden set) | Scalable, faster iteration, still grounded by sanity checks | Full manual labeling, ROUGE-only |
 | **Code quality** | Ruff + pre-commit | Fastest linter, auto-format, catches issues before commit | Black + isort + flake8 |
 | **Testing** | pytest | Standard, well-supported | unittest |
 | **Version control** | Git + GitHub | Team standard, PR reviews, CI-ready | — |
@@ -268,11 +268,46 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. Key points:
 
 ## Evaluation
 
-We evaluate along three axes:
+The project now follows a **3-tier benchmarking approach**.
 
-1. **Retrieval quality**: Precision@5, Recall@5, MRR
-2. **Answer quality**: ROUGE-1, ROUGE-L, LLM-as-judge faithfulness
-3. **Efficiency**: Query latency (seconds), token usage
+### Tier 1 — Automated Sensemaking / Answer Quality (primary)
+
+- Generate diverse evaluation questions with an LLM (persona/sensemaking style).
+- Evaluate answers with **LLM-as-judge** criteria, prioritising:
+      - faithfulness (groundedness)
+      - comprehensiveness
+      - diversity / coverage
+- Run head-to-head comparisons between `rag`, `graphrag_local`, `graphrag_global`,
+      `graphrag_graph_only`, and `graphrag_hybrid`.
+
+Why: semantic evaluation scales better than ROUGE for research QA where multiple
+correct phrasings and evidence paths exist.
+
+### Tier 2 — Automated Efficiency Tracking (primary)
+
+- Track runtime and cost proxies directly in benchmark output:
+      - query latency (`latency_s`)
+      - context size (`context_char_count`, `estimated_context_tokens`)
+      - provider/model metadata (`llm_provider`, `llm_model`, etc.)
+      - run reproducibility (`run_id`, `timestamp_utc`)
+
+Why: GraphRAG quality gains must be weighed against latency and token/context cost.
+
+### Tier 3 — Small Manual Golden Set (sanity check)
+
+- Maintain a **small** manually-labeled set (recommended: 20–50 questions).
+- Use exact `relevant_doc_ids` for traditional retrieval sanity metrics:
+      - Precision@k
+      - Recall@k
+      - MRR
+
+Why: catches obvious retrieval regressions without the cost of full manual annotation.
+
+### Practical Guidance
+
+- Treat LLM-judge + efficiency as the main decision signals.
+- Use ROUGE as a secondary/diagnostic metric only.
+- Avoid large-scale manual reference-answer authoring for the whole corpus.
 
 Results are saved to `results/benchmark_report.csv`.
 
@@ -285,7 +320,9 @@ Results are saved to `results/benchmark_report.csv`.
 - [ ] Standard RAG: end-to-end index + query working
 - [ ] GraphRAG: entity extraction on full corpus
 - [ ] GraphRAG: community detection & summarisation
-- [ ] Evaluation question set (manual + LLM-generated)
-- [ ] Full benchmark run & analysis
+- [ ] Automated question generation pipeline (persona/sensemaking prompts)
+- [ ] LLM-judge rubric expansion (faithfulness + comprehensiveness + diversity)
+- [ ] Golden-set curation (20–50 precision/recall sanity questions)
+- [ ] Full benchmark run & analysis (quality + efficiency trade-off)
 - [ ] Title clustering / sub-field classification (optional)
 - [ ] Results write-up & visualisation
