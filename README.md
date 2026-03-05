@@ -34,37 +34,42 @@ This project builds **both** pipelines from scratch (no Microsoft GraphRAG libra
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Raw Papers │────▶│  Chunking    │────▶│  Embedding   │
-│  (~1000 txt)│     │  (tiktoken)  │     │  (ST / OAI)  │
-└─────────────┘     └──────────────┘     └──────┬───────┘
-                                                │
-                    ┌───────────────────────────┼───────────────────┐
-                    │                           │                   │
-              ┌─────▼─────┐            ┌────────▼───────┐          │
-              │ Vector DB │            │ Entity Extract │          │
-              │ (Chroma)  │            │ (LLM → triples)│          │
-              └─────┬─────┘            └────────┬───────┘          │
-                    │                           │                   │
-              ┌─────▼─────┐            ┌────────▼───────┐          │
-              │ Standard  │            │ Knowledge Graph│          │
-              │ RAG       │            │ (NetworkX)     │          │
-              │ Retriever │            └────────┬───────┘          │
-              └─────┬─────┘                     │                   │
-                    │                  ┌────────▼───────┐          │
-                    │                  │ Community Det. │          │
-                    │                  │ (Leiden/Louvain)│          │
-                    │                  └────────┬───────┘          │
-                    │                           │                   │
-                    │                  ┌────────▼───────┐          │
-                    │                  │ Graph RAG      │          │
-                    │                  │ Retriever      │◀─────────┘
-                    │                  └────────┬───────┘
-                    │                           │
-              ┌─────▼───────────────────────────▼──────┐
-              │         Evaluation & Benchmark         │
-              │ (LLM Judge + Efficiency + Golden Set) │
-              └────────────────────────────────────────┘
+## System Architecture
+
+This repository implements a comparative benchmarking framework to evaluate a custom-built GraphRAG system against a traditional retrieval-augmented generation (RAG) pipeline. The architecture is designed to ingest raw scientific literature, process the text through parallel indexing workflows, and conduct rigorous head-to-head empirical evaluations.
+
+```text
+┌──────────────┐     ┌───────────────┐     ┌──────────────┐     ┌──────────────┐
+│  Raw Papers  │────▶│ Preprocessing │────▶│  Chunking   │────▶│  Embedding  │
+│ (~1000 PDFs) │     │ (PDF to TXT)  │     │  (tiktoken)  │     │  (ST / OAI)  │
+└──────────────┘     └───────────────┘     └──────────────┘     └──────┬───────┘
+                                                                       │
+                    ┌──────────────────────────────────────────────────┼───────────────────┐
+                    │                                                  │                   │
+              ┌─────▼─────┐                                   ┌────────▼───────┐           │
+              │ Vector DB │                                   │ Entity Extract │           │
+              │ (Chroma)  │                                   │ (LLM → triples)│           │
+              └─────┬─────┘                                   └────────┬───────┘           │
+                    │                                                  │                   │
+              ┌─────▼─────┐                                   ┌────────▼───────┐           │
+              │ Standard  │                                   │ Knowledge Graph│           │
+              │ RAG       │                                   │ (NetworkX)     │           │
+              │ Retriever │                                   └────────┬───────┘           │ 
+              └─────┬─────┘                                            │                   │
+                    │                                         ┌────────▼───────┐           │
+                    │                                         │ Community Det. │           │
+                    │                                         │ (Leiden/Louvain)│          │
+                    │                                         └────────┬───────┘           │
+                    │                                                  │                   │
+                    │                                         ┌────────▼───────┐           │
+                    │                                         │ Graph RAG      │           │
+                    │                                         │ Retriever      │◀─────────┘
+                    │                                         └────────┬───────┘
+                    │                                                  │
+              ┌─────▼──────────────────────────────────────────────────▼──────┐
+              │                   Evaluation & Benchmarking                   │
+              │              (Precision, Recall, ROUGE, Latency)              │
+              └───────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -121,9 +126,6 @@ UOG_RL_GraphRAG/
 │   └── test_graph_builder.py
 │
 ├── notebooks/                  # Jupyter notebooks for exploration
-│   ├── 01_data_exploration.ipynb
-│   ├── 02_rag_experiment.ipynb
-│   └── 03_graphrag_experiment.ipynb
 │
 ├── scripts/                    # One-off scripts
 │
