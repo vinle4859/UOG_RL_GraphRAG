@@ -32,6 +32,10 @@ from pathlib import Path
 import pandas as pd
 
 from src.evaluation.metrics import (
+    comprehensiveness_score,
+    diversity_score,
+    directness_score,
+    empowerment_score,
     faithfulness_score,
     mean_reciprocal_rank,
     precision_at_k,
@@ -70,10 +74,10 @@ class EvalQuestion:
 @dataclass
 class EvalRecord:
     """Metrics for one question + one pipeline."""
-    run_id: str = ""
-    timestamp_utc: str = ""
     question: str
     pipeline: str  # "rag", "graphrag_local", "graphrag_global", "graphrag_graph_only", etc.
+    run_id: str = ""
+    timestamp_utc: str = ""
     search_mode: str = ""  # search mode used (for GraphRAG)
     llm_provider: str = ""
     llm_model: str = ""
@@ -88,6 +92,10 @@ class EvalRecord:
     rouge1: float = 0.0
     rougeL: float = 0.0
     faithfulness: float = 0.0
+    comprehensiveness: float = 0.0
+    diversity: float = 0.0
+    directness: float = 0.0
+    empowerment: float = 0.0
     context_char_count: int = 0
     estimated_context_tokens: int = 0
 
@@ -117,6 +125,9 @@ class BenchmarkRunner:
         Which GraphRAG search modes to benchmark.  Defaults to all four.
     compute_faithfulness : bool
         Whether to run LLM-as-judge faithfulness scoring (adds latency).
+    compute_quality_judges : bool
+        Whether to run additional LLM judges: comprehensiveness,
+        diversity, directness, and empowerment.
     """
 
     def __init__(
@@ -125,11 +136,13 @@ class BenchmarkRunner:
         graphrag_pipeline=None,
         graphrag_modes: list[str] | None = None,
         compute_faithfulness: bool = False,
+        compute_quality_judges: bool = False,
     ):
         self.rag = rag_pipeline
         self.graphrag = graphrag_pipeline
         self.graphrag_modes = graphrag_modes or ["local", "global", "graph_only", "hybrid"]
         self.compute_faithfulness = compute_faithfulness
+        self.compute_quality_judges = compute_quality_judges
         self._run_id = ""
         self._timestamp_utc = ""
 
@@ -157,7 +170,13 @@ class BenchmarkRunner:
             data = json.load(f)
         return [EvalQuestion(**item) for item in data]
 
-    def run(self, questions_path: Path | str, top_k: int = 5) -> pd.DataFrame:
+    def run(
+        self,
+        questions_path: Path | str,
+        top_k: int = 5,
+        write_jsonl_log: bool = True,
+        jsonl_log_path: Path | str | None = None,
+    ) -> pd.DataFrame:
         """
         Run both pipelines on all questions and return a DataFrame of metrics.
 
@@ -175,6 +194,7 @@ class BenchmarkRunner:
         """
         self._run_id = str(uuid.uuid4())
         self._timestamp_utc = datetime.now(timezone.utc).isoformat()
+        logger.info("Benchmark run started: run_id=%s", self._run_id)
 
         questions = self.load_questions(questions_path)
         records: list[dict] = []
@@ -192,8 +212,31 @@ class BenchmarkRunner:
                     records.append(rec.__dict__)
 
         df = pd.DataFrame(records)
+        if write_jsonl_log:
+            self._write_jsonl_log(df, jsonl_log_path)
         logger.info("Benchmark complete — %d records.", len(df))
         return df
+
+    def _write_jsonl_log(self, df: pd.DataFrame, jsonl_log_path: Path | str | None = None) -> None:
+        """Persist benchmark records as JSONL for auditability and replay."""
+        if df.empty:
+            return
+
+        if jsonl_log_path is None:
+            from src.config import get_settings
+
+            base = get_settings().results_dir / "benchmark_runs"
+            base.mkdir(parents=True, exist_ok=True)
+            log_path = base / f"{self._run_id}.jsonl"
+        else:
+            log_path = Path(jsonl_log_path)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(log_path, "w", encoding="utf-8") as f:
+            for rec in df.to_dict(orient="records"):
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+        logger.info("Benchmark JSONL log written: %s", log_path)
 
     def _get_model_metadata(self) -> dict[str, str]:
         """Collect provider/model metadata for benchmark traceability."""
@@ -269,6 +312,26 @@ class BenchmarkRunner:
 
         if self.compute_faithfulness and context.strip():
             rec.faithfulness = faithfulness_score(result.answer, context)
+        if self.compute_quality_judges and context.strip():
+            rec.comprehensiveness = comprehensiveness_score(
+                question=eq.question,
+                answer=result.answer,
+                context=context,
+            )
+            rec.diversity = diversity_score(
+                question=eq.question,
+                answer=result.answer,
+                context=context,
+            )
+            rec.directness = directness_score(
+                question=eq.question,
+                answer=result.answer,
+            )
+            rec.empowerment = empowerment_score(
+                question=eq.question,
+                answer=result.answer,
+                context=context,
+            )
 
         return rec
 
@@ -320,5 +383,25 @@ class BenchmarkRunner:
 
         if self.compute_faithfulness and context.strip():
             rec.faithfulness = faithfulness_score(result.answer, context)
+        if self.compute_quality_judges and context.strip():
+            rec.comprehensiveness = comprehensiveness_score(
+                question=eq.question,
+                answer=result.answer,
+                context=context,
+            )
+            rec.diversity = diversity_score(
+                question=eq.question,
+                answer=result.answer,
+                context=context,
+            )
+            rec.directness = directness_score(
+                question=eq.question,
+                answer=result.answer,
+            )
+            rec.empowerment = empowerment_score(
+                question=eq.question,
+                answer=result.answer,
+                context=context,
+            )
 
         return rec

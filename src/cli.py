@@ -155,7 +155,24 @@ def query(question: str, pipeline: str, top_k: int):
     default=False,
     help="Enable LLM-as-judge faithfulness scoring (slower, extra LLM calls).",
 )
-def benchmark(questions_path: str, output: str, graphrag_modes: tuple[str, ...], faithfulness: bool):
+@click.option(
+    "--quality-judges/--no-quality-judges",
+    default=False,
+    help="Enable comprehensiveness and diversity LLM judges (slowest mode).",
+)
+@click.option(
+    "--jsonl-log/--no-jsonl-log",
+    default=True,
+    help="Write per-run JSONL benchmark log under results/benchmark_runs/.",
+)
+def benchmark(
+    questions_path: str,
+    output: str,
+    graphrag_modes: tuple[str, ...],
+    faithfulness: bool,
+    quality_judges: bool,
+    jsonl_log: bool,
+):
     """Run side-by-side benchmark evaluation."""
     from pathlib import Path
     from src.evaluation.benchmark import BenchmarkRunner
@@ -173,8 +190,9 @@ def benchmark(questions_path: str, output: str, graphrag_modes: tuple[str, ...],
         graphrag_pipeline=graphrag_pipe,
         graphrag_modes=modes,
         compute_faithfulness=faithfulness,
+        compute_quality_judges=quality_judges,
     )
-    df = runner.run(questions_path)
+    df = runner.run(questions_path, write_jsonl_log=jsonl_log)
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output, index=False)
