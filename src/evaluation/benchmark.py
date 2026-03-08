@@ -34,6 +34,8 @@ import pandas as pd
 from src.evaluation.metrics import (
     comprehensiveness_score,
     diversity_score,
+    directness_score,
+    empowerment_score,
     faithfulness_score,
     mean_reciprocal_rank,
     precision_at_k,
@@ -92,6 +94,8 @@ class EvalRecord:
     faithfulness: float = 0.0
     comprehensiveness: float = 0.0
     diversity: float = 0.0
+    directness: float = 0.0
+    empowerment: float = 0.0
     context_char_count: int = 0
     estimated_context_tokens: int = 0
 
@@ -121,6 +125,9 @@ class BenchmarkRunner:
         Which GraphRAG search modes to benchmark.  Defaults to all four.
     compute_faithfulness : bool
         Whether to run LLM-as-judge faithfulness scoring (adds latency).
+    compute_quality_judges : bool
+        Whether to run additional LLM judges: comprehensiveness,
+        diversity, directness, and empowerment.
     """
 
     def __init__(
@@ -316,6 +323,15 @@ class BenchmarkRunner:
                 answer=result.answer,
                 context=context,
             )
+            rec.directness = directness_score(
+                question=eq.question,
+                answer=result.answer,
+            )
+            rec.empowerment = empowerment_score(
+                question=eq.question,
+                answer=result.answer,
+                context=context,
+            )
 
         return rec
 
@@ -374,6 +390,15 @@ class BenchmarkRunner:
                 context=context,
             )
             rec.diversity = diversity_score(
+                question=eq.question,
+                answer=result.answer,
+                context=context,
+            )
+            rec.directness = directness_score(
+                question=eq.question,
+                answer=result.answer,
+            )
+            rec.empowerment = empowerment_score(
                 question=eq.question,
                 answer=result.answer,
                 context=context,

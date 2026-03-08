@@ -282,6 +282,8 @@ The project now follows a **3-tier benchmarking approach**.
       - faithfulness (groundedness)
       - comprehensiveness
       - diversity / coverage
+      - directness
+      - empowerment
 - Run head-to-head comparisons between `rag`, `graphrag_local`, `graphrag_global`,
       `graphrag_graph_only`, and `graphrag_hybrid`.
 
@@ -343,7 +345,7 @@ rag-bench benchmark data/eval_questions.json --no-jsonl-log
 - [ ] GraphRAG: entity extraction on full corpus
 - [ ] GraphRAG: community detection & summarisation
 - [ ] Automated question generation pipeline (persona/sensemaking prompts)
-- [ ] LLM-judge rubric expansion (faithfulness + comprehensiveness + diversity)
+- [ ] LLM-judge rubric expansion (faithfulness + comprehensiveness + diversity + directness + empowerment)
 - [ ] Golden-set curation (20–50 precision/recall sanity questions)
 - [ ] Full benchmark run & analysis (quality + efficiency trade-off)
 - [ ] Title clustering / sub-field classification (optional)

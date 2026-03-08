@@ -18,6 +18,8 @@ Generation Metrics
 - Faithfulness score (LLM-as-judge — is the answer grounded in context?)
 - Comprehensiveness score (LLM-as-judge — does the answer cover key points?)
 - Diversity score (LLM-as-judge — does the answer avoid narrow, repetitive framing?)
+- Directness score (LLM-as-judge — does the answer address the question directly?)
+- Empowerment score (LLM-as-judge — does the answer enable next-step action/understanding?)
 
 All functions accept simple Python types so they're easy to use from
 notebooks and scripts.
@@ -170,6 +172,43 @@ Rate diversity from 0.0 to 1.0:
 Respond with ONLY a single number between 0.0 and 1.0.
 """
 
+DIRECTNESS_PROMPT = """\
+You are an impartial judge evaluating directness of an answer.
+
+Question:
+{question}
+
+Answer:
+{answer}
+
+Rate directness from 0.0 to 1.0:
+- 1.0 = directly answers the question with minimal unnecessary detours
+- 0.5 = partly direct but includes avoidable digressions
+- 0.0 = mostly indirect or fails to answer what was asked
+
+Respond with ONLY a single number between 0.0 and 1.0.
+"""
+
+EMPOWERMENT_PROMPT = """\
+You are an impartial judge evaluating empowerment of an answer.
+
+Question:
+{question}
+
+Context:
+{context}
+
+Answer:
+{answer}
+
+Rate empowerment from 0.0 to 1.0:
+- 1.0 = leaves the user with clear understanding and actionable next steps
+- 0.5 = somewhat useful but lacks clarity/actionability
+- 0.0 = not useful for decision-making or follow-up action
+
+Respond with ONLY a single number between 0.0 and 1.0.
+"""
+
 
 def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
     """Run a scalar LLM-as-judge prompt and parse score in [0, 1]."""
@@ -268,5 +307,33 @@ def diversity_score(
         question=question,
         context=context,
         answer=answer,
+    )
+    return _llm_scalar_score(prompt, model=model)
+
+
+def directness_score(
+    question: str,
+    answer: str,
+    model: str | None = None,
+) -> float:
+    """LLM-as-judge score for directness of response to the question."""
+    prompt = DIRECTNESS_PROMPT.format(
+        question=question,
+        answer=answer,
+    )
+    return _llm_scalar_score(prompt, model=model)
+
+
+def empowerment_score(
+    question: str,
+    answer: str,
+    context: str,
+    model: str | None = None,
+) -> float:
+    """LLM-as-judge score for usefulness/actionability of answer."""
+    prompt = EMPOWERMENT_PROMPT.format(
+        question=question,
+        answer=answer,
+        context=context,
     )
     return _llm_scalar_score(prompt, model=model)

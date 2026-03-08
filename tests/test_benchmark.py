@@ -56,6 +56,8 @@ def test_benchmark_writes_jsonl(tmp_path):
     assert "context_char_count" in df.columns
     assert "comprehensiveness" in df.columns
     assert "diversity" in df.columns
+    assert "directness" in df.columns
+    assert "empowerment" in df.columns
 
     assert log_path.exists()
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
