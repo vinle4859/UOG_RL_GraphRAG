@@ -16,6 +16,8 @@ Generation Metrics
 ------------------
 - ROUGE-1 / ROUGE-L (lexical overlap with reference answers)
 - Faithfulness score (LLM-as-judge — is the answer grounded in context?)
+- Comprehensiveness score (LLM-as-judge — does the answer cover key points?)
+- Diversity score (LLM-as-judge — does the answer avoid narrow, repetitive framing?)
 
 All functions accept simple Python types so they're easy to use from
 notebooks and scripts.
@@ -127,37 +129,53 @@ Rate the faithfulness of the answer on a scale from 0.0 to 1.0:
 Respond with ONLY a single number between 0.0 and 1.0, nothing else.
 """
 
+COMPREHENSIVENESS_PROMPT = """\
+You are an impartial judge evaluating how comprehensive an answer is given a
+question and supporting context.
 
-def faithfulness_score(
-    answer: str,
-    context: str,
-    model: str | None = None,
-) -> float:
-    """
-    LLM-as-judge: rate how faithfully the *answer* is grounded in the
-    *context* on a scale of 0–1.
+Question:
+{question}
 
-    Supports both OpenAI and Ollama backends based on the configured
-    ``LLM_PROVIDER``.
+Context:
+{context}
 
-    Parameters
-    ----------
-    answer : str
-        The generated answer.
-    context : str
-        The retrieval context provided to the generator.
-    model : str, optional
-        LLM to use as judge.  Defaults per provider.
+Answer:
+{answer}
 
-    Returns
-    -------
-    float
-        Score in [0, 1].
-    """
+Rate comprehensiveness from 0.0 to 1.0:
+- 1.0 = covers nearly all major relevant points supported by context
+- 0.5 = covers some points but misses important aspects
+- 0.0 = very incomplete or largely irrelevant
+
+Respond with ONLY a single number between 0.0 and 1.0.
+"""
+
+DIVERSITY_PROMPT = """\
+You are an impartial judge evaluating informational diversity of an answer.
+
+Question:
+{question}
+
+Context:
+{context}
+
+Answer:
+{answer}
+
+Rate diversity from 0.0 to 1.0:
+- 1.0 = answer spans multiple relevant facets/perspectives from context
+- 0.5 = somewhat varied but narrow in scope
+- 0.0 = single-facet, repetitive, or overly narrow
+
+Respond with ONLY a single number between 0.0 and 1.0.
+"""
+
+
+def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
+    """Run a scalar LLM-as-judge prompt and parse score in [0, 1]."""
     from src.config import LLMProvider, get_settings
 
     settings = get_settings()
-    prompt = FAITHFULNESS_PROMPT.format(context=context, answer=answer)
 
     try:
         if settings.llm_provider == LLMProvider.OLLAMA:
@@ -186,9 +204,69 @@ def faithfulness_score(
         score = _parse_faithfulness_score(raw)
         if score > 0.0 or raw.strip().startswith("0"):
             return score
-        logger.warning("Could not parse faithfulness score from: %s", raw)
+        logger.warning("Could not parse scalar judge score from: %s", raw)
         return 0.0
 
     except Exception:
-        logger.exception("Faithfulness scoring failed — returning 0.0")
+        logger.exception("Scalar judge scoring failed — returning 0.0")
         return 0.0
+
+
+def faithfulness_score(
+    answer: str,
+    context: str,
+    model: str | None = None,
+) -> float:
+    """
+    LLM-as-judge: rate how faithfully the *answer* is grounded in the
+    *context* on a scale of 0–1.
+
+    Supports both OpenAI and Ollama backends based on the configured
+    ``LLM_PROVIDER``.
+
+    Parameters
+    ----------
+    answer : str
+        The generated answer.
+    context : str
+        The retrieval context provided to the generator.
+    model : str, optional
+        LLM to use as judge.  Defaults per provider.
+
+    Returns
+    -------
+    float
+        Score in [0, 1].
+    """
+    prompt = FAITHFULNESS_PROMPT.format(context=context, answer=answer)
+    return _llm_scalar_score(prompt, model=model)
+
+
+def comprehensiveness_score(
+    question: str,
+    answer: str,
+    context: str,
+    model: str | None = None,
+) -> float:
+    """LLM-as-judge score for coverage/completeness of answer."""
+    prompt = COMPREHENSIVENESS_PROMPT.format(
+        question=question,
+        context=context,
+        answer=answer,
+    )
+    return _llm_scalar_score(prompt, model=model)
+
+
+def diversity_score(
+    question: str,
+    answer: str,
+    context: str,
+    model: str | None = None,
+) -> float:
+    """LLM-as-judge score for informational breadth/diversity."""
+    prompt = DIVERSITY_PROMPT.format(
+        question=question,
+        context=context,
+        answer=answer,
+    )
+    return _llm_scalar_score(prompt, model=model)

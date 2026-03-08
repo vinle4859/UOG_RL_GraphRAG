@@ -224,6 +224,9 @@ rag-bench query "What is Proximal Policy Optimization?"
 
 # Run benchmark
 rag-bench benchmark data/eval_questions.json
+
+# Run benchmark with all LLM judges and JSONL audit log
+rag-bench benchmark data/eval_questions.json --faithfulness --quality-judges
 ```
 
 ---
@@ -292,6 +295,7 @@ correct phrasings and evidence paths exist.
       - context size (`context_char_count`, `estimated_context_tokens`)
       - provider/model metadata (`llm_provider`, `llm_model`, etc.)
       - run reproducibility (`run_id`, `timestamp_utc`)
+      - per-run JSONL logs in `results/benchmark_runs/*.jsonl`
 
 Why: GraphRAG quality gains must be weighed against latency and token/context cost.
 
@@ -312,6 +316,22 @@ Why: catches obvious retrieval regressions without the cost of full manual annot
 - Avoid large-scale manual reference-answer authoring for the whole corpus.
 
 Results are saved to `results/benchmark_report.csv`.
+
+### Benchmark CLI Modes
+
+```bash
+# Compare all GraphRAG modes (default): local/global/graph_only/hybrid
+rag-bench benchmark data/eval_questions.json
+
+# Focus on fair ablation: RAG vs graph-only
+rag-bench benchmark data/eval_questions.json --graphrag-mode graph_only
+
+# Enable all LLM judges
+rag-bench benchmark data/eval_questions.json --faithfulness --quality-judges
+
+# Disable JSONL audit log if needed
+rag-bench benchmark data/eval_questions.json --no-jsonl-log
+```
 
 ---
 
