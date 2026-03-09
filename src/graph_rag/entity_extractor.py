@@ -131,20 +131,23 @@ class EntityExtractor:
         """
         Extract entities and relations from a single text chunk.
 
-        Math-heavy chunks (LaTeX, dense symbol sequences, pure proofs) are
-        detected by :meth:`_is_math_heavy` and silently skipped — returning
-        an empty result — to avoid malformed LLM output that wastes time and
-        corrupts the checkpoint.
+        Math expressions are stripped from *text* before the LLM call so that
+        inline equations don't corrupt the JSON output.  If stripping leaves
+        fewer than 20 word-like tokens the chunk is still skipped (it was
+        essentially pure math with no useful prose).
 
         Returns
         -------
         ExtractionResult
         """
-        if self._is_math_heavy(text):
-            logger.debug("Skipping math-heavy chunk %s", chunk_id)
+        cleaned = self._strip_math(text)
+        tokens = cleaned.split()
+        word_tokens = sum(1 for t in tokens if sum(c.isalpha() for c in t) / max(len(t), 1) >= 0.60)
+        if word_tokens < 20:
+            logger.debug("Skipping near-empty chunk %s after math stripping", chunk_id)
             return ExtractionResult(chunk_id=chunk_id)
 
-        raw_json = self._call_llm(text)
+        raw_json = self._call_llm(cleaned)
         return self._parse_response(chunk_id, raw_json)
 
     def extract_batch(
@@ -230,32 +233,59 @@ class EntityExtractor:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _strip_math(text: str) -> str:
+        """Remove mathematical expressions from *text*, preserving prose.
+
+        Stripping order (each step operates on the result of the previous):
+
+        1. LaTeX display environments  ``\\begin{...} ... \\end{...}``
+        2. Display math delimiters     ``$$ ... $$``  and  ``\\[ ... \\]``
+        3. Inline math delimiters      ``$ ... $``    and  ``\\( ... \\)``
+        4. Bare LaTeX commands         ``\\cmd{...}{...}`` (any braced args)
+        5. Tokens whose characters are >60 % non-alphabetic (stray symbols)
+        6. Collapse runs of whitespace left by removed segments
+        """
+        # 1 — LaTeX environments
+        text = re.sub(r"\\begin\s*\{[^}]*\}.*?\\end\s*\{[^}]*\}", " ", text, flags=re.DOTALL)
+
+        # 2 — display math
+        text = re.sub(r"\$\$.*?\$\$", " ", text, flags=re.DOTALL)
+        text = re.sub(r"\\\[.*?\\\]", " ", text, flags=re.DOTALL)
+
+        # 3 — inline math
+        text = re.sub(r"\$[^$\n]{1,300}?\$", " ", text)
+        text = re.sub(r"\\\(.*?\\\)", " ", text, flags=re.DOTALL)
+
+        # 4 — bare LaTeX commands with braced arguments  e.g. \frac{a}{b}
+        # Repeat up to 4 times to handle nested braces
+        _latex_cmd = re.compile(r"\\[a-zA-Z]+(?:\s*\{[^{}]*\})+")
+        for _ in range(4):
+            text, n = _latex_cmd.subn(" ", text)
+            if n == 0:
+                break
+
+        # 5 — stray symbol tokens (e.g. "=x^2", "_{k}", "≤0.05")
+        tokens = text.split()
+        tokens = [t for t in tokens if sum(c.isalpha() for c in t) / max(len(t), 1) >= 0.40]
+        text = " ".join(tokens)
+
+        # 6 — normalise whitespace
+        text = re.sub(r"[ \t]+", " ", text).strip()
+        return text
+
+    @staticmethod
     def _is_math_heavy(text: str) -> bool:
         """Return True when *text* is dominated by mathematical notation.
 
-        A chunk is considered math-heavy (and skipped) when the ratio of
-        *natural-language word tokens* to *total whitespace-separated tokens*
-        falls below ``_MATH_PASS_THRESHOLD``.  A token counts as a natural-
-        language word when it consists predominantly of ASCII letters (≥ 60 %
-        of its characters are ``[a-zA-Z]``).
-
-        Additional hard triggers that force a skip regardless of the ratio:
-        - The chunk contains a LaTeX ``\\begin{...}`` / ``\\end{...}`` block.
-        - More than 20 % of all characters are common math symbols
-          (``+``, ``=``, ``<``, ``>``, ``^``, ``_``, ``\\``, ``|``, ``∑``,
-          ``∫``, ``∂``, ``∈``, ``≤``, ``≥``, ``≠``, ``→``, ``∞``).
+        Used as a diagnostic / logging helper.  The active guard in
+        :meth:`extract` operates on the *stripped* text instead.
         """
-        # Hard trigger 1 — LaTeX environments
         if re.search(r"\\begin\s*\{", text):
             return True
-
-        # Hard trigger 2 — high density of math/operator characters
         math_chars = set(r"+=<>^_\|∑∫∂∈≤≥≠→∞±×÷√θλσμπαβγδεζη")
         math_char_ratio = sum(1 for c in text if c in math_chars) / max(len(text), 1)
         if math_char_ratio > 0.20:
             return True
-
-        # Soft check — fraction of word-like tokens
         tokens = text.split()
         if not tokens:
             return False
