@@ -22,9 +22,10 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field, replace as dataclass_replace
-from typing import Callable, Sequence
+from dataclasses import dataclass, field
+from dataclasses import replace as dataclass_replace
 
 import tiktoken
 
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Text Preprocessing Helpers
 # ---------------------------------------------------------------------------
+
 
 def _normalize_unicode(text: str) -> str:
     """Normalise unicode to NFC form (e.g. combining accents → single chars)."""
@@ -54,10 +56,7 @@ def _collapse_whitespace(text: str) -> str:
 
 def _remove_control_characters(text: str) -> str:
     """Strip non-printable control characters (except newline/tab)."""
-    return "".join(
-        ch for ch in text
-        if unicodedata.category(ch)[0] != "C" or ch in ("\n", "\t")
-    )
+    return "".join(ch for ch in text if unicodedata.category(ch)[0] != "C" or ch in ("\n", "\t"))
 
 
 # Default preprocessing chain applied by ChunkingPipeline
@@ -71,6 +70,7 @@ DEFAULT_PREPROCESSORS: list[Callable[[str], str]] = [
 # ---------------------------------------------------------------------------
 # Data Model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Chunk:
@@ -90,6 +90,7 @@ class Chunk:
     metadata : dict
         Inherited + chunk-specific metadata.
     """
+
     chunk_id: str
     doc_id: str
     text: str
@@ -100,6 +101,7 @@ class Chunk:
 # ---------------------------------------------------------------------------
 # Chunker
 # ---------------------------------------------------------------------------
+
 
 class TokenChunker:
     """
@@ -139,22 +141,24 @@ class TokenChunker:
             chunk_tokens = tokens[start:end]
             chunk_text = self.encoder.decode(chunk_tokens)
 
-            chunks.append(Chunk(
-                chunk_id=f"{doc.doc_id}__chunk_{idx}",
-                doc_id=doc.doc_id,
-                text=chunk_text,
-                index=idx,
-                metadata={
-                    "title": doc.title,
-                    "doc_id": doc.doc_id,
-                    **doc.metadata,
-                },
-            ))
+            chunks.append(
+                Chunk(
+                    chunk_id=f"{doc.doc_id}__chunk_{idx}",
+                    doc_id=doc.doc_id,
+                    text=chunk_text,
+                    index=idx,
+                    metadata={
+                        "title": doc.title,
+                        "doc_id": doc.doc_id,
+                        **doc.metadata,
+                    },
+                )
+            )
 
             start += self.chunk_size - self.chunk_overlap
             idx += 1
 
-        logger.debug("Document %s → %d chunks", doc.doc_id, len(chunks))
+        logger.debug("Document %s -> %d chunks", doc.doc_id, len(chunks))
         return chunks
 
     def chunk_documents(
@@ -178,16 +182,13 @@ class TokenChunker:
             all_chunks: list[Chunk] = []
             for doc in docs:
                 all_chunks.extend(self.chunk_document(doc))
-            logger.info("Chunked %d documents → %d chunks", len(docs), len(all_chunks))
+            logger.info("Chunked %d documents -> %d chunks", len(docs), len(all_chunks))
             return all_chunks
 
         # Parallel path — tiktoken.encode is thread-safe
         results: dict[int, list[Chunk]] = {}
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            future_to_idx = {
-                pool.submit(self.chunk_document, doc): i
-                for i, doc in enumerate(docs)
-            }
+            future_to_idx = {pool.submit(self.chunk_document, doc): i for i, doc in enumerate(docs)}
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
                 try:
@@ -198,13 +199,16 @@ class TokenChunker:
 
         # Preserve original document order
         all_chunks = [chunk for i in range(len(docs)) for chunk in results.get(i, [])]
-        logger.info("Chunked %d documents → %d chunks (workers=%d)", len(docs), len(all_chunks), workers)
+        logger.info(
+            "Chunked %d documents -> %d chunks (workers=%d)", len(docs), len(all_chunks), workers
+        )
         return all_chunks
 
 
 # ---------------------------------------------------------------------------
 # Chunking Pipeline
 # ---------------------------------------------------------------------------
+
 
 class ChunkingPipeline:
     """

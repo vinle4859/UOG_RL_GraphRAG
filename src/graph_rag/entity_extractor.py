@@ -26,6 +26,8 @@ import contextlib
 import json
 import logging
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -127,6 +129,10 @@ class EntityExtractor:
     # before we bother calling the LLM.
     _MATH_PASS_THRESHOLD: float = 0.5
 
+    # Max concurrent Ollama requests.  2-3 works well for a 0.8B model on
+    # a 4 GB VRAM GPU; increase if VRAM headroom allows.
+    _DEFAULT_OLLAMA_WORKERS: int = 3
+
     def extract(self, chunk_id: str, text: str) -> ExtractionResult:
         """
         Extract entities and relations from a single text chunk.
@@ -154,6 +160,7 @@ class EntityExtractor:
         self,
         chunks: list[tuple[str, str]],
         checkpoint_path: Path | str | None = None,
+        num_workers: int | None = None,
     ) -> list[ExtractionResult]:
         """
         Extract from multiple (chunk_id, text) pairs.
@@ -162,16 +169,27 @@ class EntityExtractor:
         after each chunk so a crashed run can be resumed without re-processing
         already-completed chunks.
 
+        Concurrent Ollama requests are issued via a thread pool so GPU
+        utilisation stays high.  *num_workers* defaults to
+        ``_DEFAULT_OLLAMA_WORKERS`` (3) for Ollama and 1 for OpenAI
+        (rate-limited API).
+
         Parameters
         ----------
         chunks : list of (chunk_id, text)
         checkpoint_path : Path, optional
             JSONL file to read existing results from and append new results to.
             Pass the same path on every run to get resume behaviour.
-
-        TODO: Parallelise with asyncio / thread pool for speed.
+        num_workers : int, optional
+            Number of concurrent LLM requests.  Defaults to 3 for Ollama.
         """
         from tqdm import tqdm
+
+        workers = (
+            num_workers
+            if num_workers is not None
+            else (self._DEFAULT_OLLAMA_WORKERS if self._provider == LLMProvider.OLLAMA else 1)
+        )
 
         # --- Load checkpoint ---
         checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
@@ -191,28 +209,50 @@ class EntityExtractor:
                 len(chunks),
             )
 
-        # --- Open checkpoint file for appending ---
+        # --- Open checkpoint file for appending (thread-safe via lock) ---
         ckpt_fh = None
+        ckpt_lock = threading.Lock()
         if checkpoint_path:
             checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             ckpt_fh = open(checkpoint_path, "a", encoding="utf-8")  # noqa: SIM115
+
+        def _write_checkpoint(result: ExtractionResult) -> None:
+            if ckpt_fh:
+                with ckpt_lock:
+                    ckpt_fh.write(json.dumps(asdict(result)) + "\n")
+                    ckpt_fh.flush()
 
         # --- Process pending chunks ---
         results: list[ExtractionResult] = list(done.values())
         pending = [(cid, txt) for cid, txt in chunks if cid not in done]
 
-        try:
-            for chunk_id, text in tqdm(pending, desc="Extracting entities", unit="chunk"):
-                try:
-                    result = self.extract(chunk_id, text)
-                except Exception:
-                    logger.exception("Extraction failed for chunk %s", chunk_id)
-                    result = ExtractionResult(chunk_id=chunk_id)
+        def _extract_one(args: tuple[str, str]) -> ExtractionResult:
+            cid, txt = args
+            try:
+                return self.extract(cid, txt)
+            except Exception:
+                logger.exception("Extraction failed for chunk %s", cid)
+                return ExtractionResult(chunk_id=cid)
 
-                results.append(result)
-                if ckpt_fh:
-                    ckpt_fh.write(json.dumps(asdict(result)) + "\n")
-                    ckpt_fh.flush()
+        try:
+            pbar = tqdm(total=len(pending), desc="Extracting entities", unit="chunk")
+            if workers <= 1:
+                # Sequential path
+                for item in pending:
+                    result = _extract_one(item)
+                    results.append(result)
+                    _write_checkpoint(result)
+                    pbar.update(1)
+            else:
+                # Parallel path — concurrent Ollama requests
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    future_to_id = {pool.submit(_extract_one, item): item[0] for item in pending}
+                    for future in as_completed(future_to_id):
+                        result = future.result()
+                        results.append(result)
+                        _write_checkpoint(result)
+                        pbar.update(1)
+            pbar.close()
         finally:
             if ckpt_fh:
                 ckpt_fh.close()
@@ -327,8 +367,17 @@ class EntityExtractor:
         prompt = f"{EXTRACTION_SYSTEM_PROMPT}\n\n{text}"
         resp = requests.post(
             f"{self._settings.ollama_base_url}/api/generate",
-            json={"model": self.model, "prompt": prompt, "stream": False},
-            timeout=180,
+            json={
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "num_ctx": 1024,  # 512-token chunks need <1024 ctx; saves VRAM
+                    "num_predict": 512,  # entity JSON rarely exceeds 512 tokens
+                    "temperature": 0,
+                },
+            },
+            timeout=60,  # GPU inference of a 0.8B model should finish well within 60s
         )
         resp.raise_for_status()
         return resp.json()["response"]
