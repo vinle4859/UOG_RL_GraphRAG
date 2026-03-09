@@ -371,9 +371,10 @@ class EntityExtractor:
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
+                "format": "json",  # Ollama JSON mode: constrains output to valid JSON
                 "options": {
                     "num_ctx": 2048,
-                    "num_predict": 512,
+                    "num_predict": 1024,  # room for verbose entity lists
                     "temperature": 0,
                 },
             },
