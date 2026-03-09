@@ -131,7 +131,7 @@ class EntityExtractor:
 
     # Max concurrent Ollama requests.  2-3 works well for a 0.8B model on
     # a 4 GB VRAM GPU; increase if VRAM headroom allows.
-    _DEFAULT_OLLAMA_WORKERS: int = 3
+    _DEFAULT_OLLAMA_WORKERS: int = 1  # Ollama is sequential on GPU; parallelism stacks wait time
 
     def extract(self, chunk_id: str, text: str) -> ExtractionResult:
         """
@@ -378,7 +378,7 @@ class EntityExtractor:
                     "temperature": 0,
                 },
             },
-            timeout=90,
+            timeout=180,  # format:json constrained decoding is slower; allow for it
         )
         resp.raise_for_status()
         return resp.json()["response"]
