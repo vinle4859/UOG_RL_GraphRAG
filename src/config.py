@@ -14,15 +14,14 @@ from __future__ import annotations
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 # ---------------------------------------------------------------------------
 # Enums for validated choices
 # ---------------------------------------------------------------------------
+
 
 class LLMProvider(str, Enum):
     OPENAI = "openai"
@@ -51,11 +50,13 @@ class GraphStoreType(str, Enum):
 # Settings
 # ---------------------------------------------------------------------------
 
+
 class Settings(BaseSettings):
     """
     Project-wide settings.  Values are loaded from environment variables
     (prefixed or unprefixed) and the ``.env`` file at the project root.
     """
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -65,10 +66,10 @@ class Settings(BaseSettings):
     # --- LLM ---
     llm_provider: LLMProvider = LLMProvider.OPENAI
     llm_model_name: str = "gpt-4o-mini"  # model name for the active provider
-    openai_api_key: Optional[str] = None
-    azure_openai_endpoint: Optional[str] = None
-    azure_openai_api_key: Optional[str] = None
-    azure_openai_deployment_name: Optional[str] = None
+    openai_api_key: str | None = None
+    azure_openai_endpoint: str | None = None
+    azure_openai_api_key: str | None = None
+    azure_openai_deployment_name: str | None = None
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
 
@@ -83,9 +84,9 @@ class Settings(BaseSettings):
 
     # --- Graph Store ---
     graph_store_type: GraphStoreType = GraphStoreType.NETWORKX
-    neo4j_uri: Optional[str] = None
-    neo4j_user: Optional[str] = None
-    neo4j_password: Optional[str] = None
+    neo4j_uri: str | None = None
+    neo4j_user: str | None = None
+    neo4j_password: str | None = None
 
     # --- Paths ---
     raw_data_dir: Path = Path("./data/raw")
@@ -99,21 +100,32 @@ class Settings(BaseSettings):
     # --- Retrieval ---
     top_k: int = Field(default=5, description="Number of retrieved chunks for RAG")
 
+    # --- Ollama ---
+    ollama_request_timeout: int = Field(
+        default=300, description="HTTP read timeout (seconds) for Ollama generate requests"
+    )
+
     # --- API Retry / Rate-limit handling ---
-    api_max_retries: int = Field(default=6, description="Max retry attempts on quota/rate-limit errors")
+    api_max_retries: int = Field(
+        default=6, description="Max retry attempts on quota/rate-limit errors"
+    )
     api_initial_backoff: float = Field(default=1.0, description="Initial backoff delay in seconds")
     api_max_backoff: float = Field(default=60.0, description="Maximum backoff delay in seconds")
     api_backoff_factor: float = Field(default=2.0, description="Exponential backoff multiplier")
-    embedding_batch_size: int = Field(default=100, description="Max texts per OpenAI embedding request")
+    embedding_batch_size: int = Field(
+        default=100, description="Max texts per OpenAI embedding request"
+    )
 
     # --- Performance ---
-    num_workers: int = Field(default=4, description="Worker threads for parallel chunking/preprocessing")
+    num_workers: int = Field(
+        default=4, description="Worker threads for parallel chunking/preprocessing"
+    )
 
     # --- Logging ---
     log_level: str = "INFO"
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Return a cached Settings instance (singleton-like via lru_cache)."""
     return Settings()

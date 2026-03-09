@@ -43,6 +43,7 @@ Answer:"""
 # Abstract Interface
 # ---------------------------------------------------------------------------
 
+
 class BaseGenerator(ABC):
     """Generate an answer from context + query."""
 
@@ -56,6 +57,7 @@ class BaseGenerator(ABC):
 # OpenAI Generator
 # ---------------------------------------------------------------------------
 
+
 class OpenAIGenerator(BaseGenerator):
     """Generate answers using the OpenAI Chat Completions API."""
 
@@ -67,9 +69,7 @@ class OpenAIGenerator(BaseGenerator):
         self.model = model or settings.llm_model_name
 
     def generate(self, query: str, context_chunks: list[SearchResult]) -> str:
-        context_str = "\n\n".join(
-            f"[{c.chunk_id}] {c.text}" for c in context_chunks
-        )
+        context_str = "\n\n".join(f"[{c.chunk_id}] {c.text}" for c in context_chunks)
         user_msg = RAG_USER_TEMPLATE.format(context=context_str, question=query)
         return self._chat_with_retry(user_msg)
 
@@ -92,6 +92,7 @@ class OpenAIGenerator(BaseGenerator):
 # Ollama Generator (local models)
 # ---------------------------------------------------------------------------
 
+
 class OllamaGenerator(BaseGenerator):
     """Generate answers using a local Ollama server."""
 
@@ -106,18 +107,17 @@ class OllamaGenerator(BaseGenerator):
     def generate(self, query: str, context_chunks: list[SearchResult]) -> str:
         import requests
 
-        context_str = "\n\n".join(
-            f"[{c.chunk_id}] {c.text}" for c in context_chunks
-        )
+        context_str = "\n\n".join(f"[{c.chunk_id}] {c.text}" for c in context_chunks)
         prompt = (
             f"{RAG_SYSTEM_PROMPT}\n\n"
             f"{RAG_USER_TEMPLATE.format(context=context_str, question=query)}"
         )
 
+        settings = get_settings()
         resp = requests.post(
             f"{self.base_url}/api/generate",
             json={"model": self.model, "prompt": prompt, "stream": False},
-            timeout=120,
+            timeout=settings.ollama_request_timeout,
         )
         resp.raise_for_status()
         return resp.json()["response"]
@@ -126,6 +126,7 @@ class OllamaGenerator(BaseGenerator):
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 def get_generator(provider: LLMProvider | None = None) -> BaseGenerator:
     """Create a generator based on configuration."""

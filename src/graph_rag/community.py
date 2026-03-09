@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 # Data Model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Community:
     """
@@ -61,6 +62,7 @@ class Community:
     metadata : dict
         Extra info (modularity contribution, size, etc.).
     """
+
     community_id: int
     nodes: list[str] = field(default_factory=list)
     summary: str = ""
@@ -71,6 +73,7 @@ class Community:
 # ---------------------------------------------------------------------------
 # Detection
 # ---------------------------------------------------------------------------
+
 
 def detect_communities_leiden(
     graph: nx.Graph | nx.DiGraph,
@@ -141,8 +144,7 @@ def detect_communities_louvain(graph: nx.Graph | nx.DiGraph) -> list[Community]:
 
     partition = louvain_communities(undirected, seed=42)
     communities = [
-        Community(community_id=cid, nodes=list(members))
-        for cid, members in enumerate(partition)
+        Community(community_id=cid, nodes=list(members)) for cid, members in enumerate(partition)
     ]
     logger.info("Louvain detected %d communities.", len(communities))
     return communities
@@ -151,6 +153,7 @@ def detect_communities_louvain(graph: nx.Graph | nx.DiGraph) -> list[Community]:
 # ---------------------------------------------------------------------------
 # Summarisation
 # ---------------------------------------------------------------------------
+
 
 def summarise_community(
     community: Community,
@@ -211,7 +214,7 @@ def summarise_community(
         resp = requests.post(
             f"{settings.ollama_base_url}/api/generate",
             json={"model": ollama_model, "prompt": prompt, "stream": False},
-            timeout=180,
+            timeout=settings.ollama_request_timeout,
         )
         resp.raise_for_status()
         summary = resp.json()["response"].strip()

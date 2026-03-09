@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Sequence
+from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ def _parse_faithfulness_score(raw: str) -> float:
 # ---------------------------------------------------------------------------
 # Retrieval Metrics
 # ---------------------------------------------------------------------------
+
 
 def precision_at_k(retrieved_ids: Sequence[str], relevant_ids: set[str], k: int) -> float:
     """
@@ -92,6 +93,7 @@ def mean_reciprocal_rank(retrieved_ids: Sequence[str], relevant_ids: set[str]) -
 # ---------------------------------------------------------------------------
 # Generation Metrics
 # ---------------------------------------------------------------------------
+
 
 def rouge_scores(prediction: str, reference: str) -> dict[str, float]:
     """
@@ -224,7 +226,7 @@ def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
             resp = requests.post(
                 f"{settings.ollama_base_url}/api/generate",
                 json={"model": ollama_model, "prompt": prompt, "stream": False},
-                timeout=120,
+                timeout=settings.ollama_request_timeout,
             )
             resp.raise_for_status()
             raw = resp.json()["response"].strip()
