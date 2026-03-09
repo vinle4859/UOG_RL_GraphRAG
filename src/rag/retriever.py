@@ -68,5 +68,15 @@ class Retriever:
     def retrieve_batch(
         self, queries: Sequence[str], top_k: int | None = None
     ) -> list[list[SearchResult]]:
-        """Retrieve for multiple queries."""
-        return [self.retrieve(q, top_k) for q in queries]
+        """
+        Retrieve for multiple queries with a single batched embedding call.
+
+        More efficient than calling :meth:`retrieve` in a loop because all
+        query embeddings are computed in one forward pass.
+        """
+        if not queries:
+            return []
+        k = top_k or self.top_k
+        # Embed all queries in one shot
+        query_embs = self.embedder.embed(list(queries))  # shape (n, dim)
+        return [self.vectorstore.query(query_embs[i], top_k=k) for i in range(len(queries))]
