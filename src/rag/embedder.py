@@ -22,6 +22,7 @@ from typing import Sequence
 import numpy as np
 
 from src.config import EmbeddingProvider, get_settings
+from src.utils.retry import openai_retry
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class SentenceTransformerEmbedder(BaseEmbedder):
 
 
 class OpenAIEmbedder(BaseEmbedder):
-    """Embed via the OpenAI Embeddings API."""
+    """Embed via the OpenAI Embeddings API with retry and batching."""
 
     def __init__(self, model: str | None = None):
         from openai import OpenAI
@@ -78,11 +79,33 @@ class OpenAIEmbedder(BaseEmbedder):
         settings = get_settings()
         self.model = model or settings.openai_embedding_model
         self.client = OpenAI(api_key=settings.openai_api_key)
+        self.batch_size = settings.embedding_batch_size
         logger.info("Using OpenAI embedding model: %s", self.model)
 
     def embed(self, texts: Sequence[str]) -> np.ndarray:
-        response = self.client.embeddings.create(input=list(texts), model=self.model)
-        return np.array([d.embedding for d in response.data])
+        """Embed texts in batches with automatic retry on rate-limit errors."""
+        all_texts = list(texts)
+        if not all_texts:
+            return np.empty((0, 0))
+
+        results: list[np.ndarray] = []
+        for batch_start in range(0, len(all_texts), self.batch_size):
+            batch = all_texts[batch_start : batch_start + self.batch_size]
+            logger.debug(
+                "Embedding batch %d–%d of %d texts",
+                batch_start + 1,
+                batch_start + len(batch),
+                len(all_texts),
+            )
+            response = self._embed_batch_with_retry(batch)
+            results.append(np.array([d.embedding for d in response.data]))
+
+        return np.vstack(results)
+
+    @openai_retry()
+    def _embed_batch_with_retry(self, batch: list[str]):
+        """Single batched embedding call, wrapped with retry logic."""
+        return self.client.embeddings.create(input=batch, model=self.model)
 
 
 # ---------------------------------------------------------------------------

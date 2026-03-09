@@ -26,15 +26,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 from dataclasses import dataclass, field
 
 from src.config import LLMProvider, get_settings
+from src.utils.retry import openai_retry
 
 logger = logging.getLogger(__name__)
-
-MAX_RETRIES = 3
-RETRY_DELAY = 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -150,28 +147,17 @@ class EntityExtractor:
     # Private helpers
     # ------------------------------------------------------------------
 
+    @openai_retry()
     def _call_llm(self, text: str) -> str:
         """Call the configured LLM and return the raw response string.
 
         Routes to OpenAI or Ollama based on ``self._provider``.
-        Includes retry logic with exponential back-off.
+        Decorated with :func:`~src.utils.retry.openai_retry` so transient
+        rate-limit / quota errors are retried with exponential back-off.
         """
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                if self._provider == LLMProvider.OLLAMA:
-                    return self._call_ollama(text)
-                else:
-                    return self._call_openai(text)
-            except Exception:
-                if attempt == MAX_RETRIES:
-                    raise
-                logger.warning(
-                    "LLM call attempt %d/%d failed — retrying in %.1fs …",
-                    attempt, MAX_RETRIES, RETRY_DELAY * attempt,
-                )
-                time.sleep(RETRY_DELAY * attempt)
-        # unreachable, but keeps mypy happy
-        raise RuntimeError("LLM call failed after retries")
+        if self._provider == LLMProvider.OLLAMA:
+            return self._call_ollama(text)
+        return self._call_openai(text)
 
     def _call_openai(self, text: str) -> str:
         """Call the OpenAI Chat Completions API."""
