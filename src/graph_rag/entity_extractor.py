@@ -38,9 +38,11 @@ logger = logging.getLogger(__name__)
 # Data Models
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Entity:
     """A named entity extracted from text."""
+
     name: str
     entity_type: str = "UNKNOWN"
     description: str = ""
@@ -49,6 +51,7 @@ class Entity:
 @dataclass
 class Relation:
     """A directed relationship between two entities."""
+
     source: str
     target: str
     relation_type: str
@@ -59,6 +62,7 @@ class Relation:
 @dataclass
 class ExtractionResult:
     """Entities + relations extracted from a single chunk."""
+
     chunk_id: str
     entities: list[Entity] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
@@ -91,6 +95,7 @@ Rules:
 # Extractor
 # ---------------------------------------------------------------------------
 
+
 class EntityExtractor:
     """
     Extract entities and relations from text chunks via an LLM.
@@ -111,9 +116,7 @@ class EntityExtractor:
         self._settings = get_settings()
         self._provider = self._settings.llm_provider
         default_model = (
-            self._settings.ollama_model
-            if self._provider == LLMProvider.OLLAMA
-            else "gpt-4o-mini"
+            self._settings.ollama_model if self._provider == LLMProvider.OLLAMA else "gpt-4o-mini"
         )
         self.model = model or default_model
 
@@ -195,10 +198,19 @@ class EntityExtractor:
         Handles common issues with smaller models:
         - Markdown code fences (```json ... ```)
         - Leading/trailing text around the JSON object
+        - Response wrapped in a JSON array instead of an object
         """
         # Strip markdown fences
         cleaned = re.sub(r"```(?:json)?\s*", "", raw)
-        cleaned = cleaned.strip().rstrip("`")
+        cleaned = cleaned.strip().rstrip("`").strip()
+
+        # If the model wrapped the object in an array, unwrap the first element
+        if cleaned.startswith("["):
+            inner_start = cleaned.find("{")
+            inner_end = cleaned.rfind("}")
+            if inner_start != -1 and inner_end != -1:
+                cleaned = cleaned[inner_start : inner_end + 1]
+                return cleaned
 
         # Try to find the outermost { ... }
         start = cleaned.find("{")
@@ -213,13 +225,19 @@ class EntityExtractor:
         """Parse the LLM JSON response into an ExtractionResult.
 
         Includes JSON repair for malformed output from smaller models.
+        Handles common small-model quirks:
+        - Markdown fences around the JSON
+        - entities/relations as lists of strings instead of dicts
+        - Unexpected nesting (e.g. {"entities": {"list": [...]}})
         """
         # First try raw, then try repaired
         data = None
         for attempt_raw in (raw, EntityExtractor._repair_json(raw)):
             try:
-                data = json.loads(attempt_raw)
-                break
+                parsed = json.loads(attempt_raw)
+                if isinstance(parsed, dict):
+                    data = parsed
+                    break
             except json.JSONDecodeError:
                 continue
 
@@ -227,22 +245,42 @@ class EntityExtractor:
             logger.warning("Invalid JSON from LLM for chunk %s — skipping.", chunk_id)
             return ExtractionResult(chunk_id=chunk_id)
 
-        entities = [
-            Entity(
-                name=e.get("name", ""),
-                entity_type=e.get("type", "UNKNOWN"),
-                description=e.get("description", ""),
-            )
-            for e in data.get("entities", [])
-        ]
-        relations = [
-            Relation(
-                source=r.get("source", ""),
-                target=r.get("target", ""),
-                relation_type=r.get("relation", ""),
-                description=r.get("description", ""),
-                chunk_id=chunk_id,
-            )
-            for r in data.get("relations", [])
-        ]
+        # Normalise entities: accept list-of-dicts OR list-of-strings
+        raw_entities = data.get("entities", [])
+        if not isinstance(raw_entities, list):
+            raw_entities = []
+
+        entities: list[Entity] = []
+        for e in raw_entities:
+            if isinstance(e, dict):
+                entities.append(
+                    Entity(
+                        name=e.get("name", ""),
+                        entity_type=e.get("type", e.get("entity_type", "UNKNOWN")),
+                        description=e.get("description", ""),
+                    )
+                )
+            elif isinstance(e, str) and e.strip():
+                # Small model returned plain string names — wrap them
+                entities.append(Entity(name=e.strip(), entity_type="UNKNOWN"))
+
+        # Normalise relations: accept list-of-dicts OR list-of-strings
+        raw_relations = data.get("relations", [])
+        if not isinstance(raw_relations, list):
+            raw_relations = []
+
+        relations: list[Relation] = []
+        for r in raw_relations:
+            if isinstance(r, dict):
+                relations.append(
+                    Relation(
+                        source=r.get("source", ""),
+                        target=r.get("target", ""),
+                        relation_type=r.get("relation", r.get("relation_type", "")),
+                        description=r.get("description", ""),
+                        chunk_id=chunk_id,
+                    )
+                )
+            # Plain-string relations can't be meaningfully parsed — skip silently
+
         return ExtractionResult(chunk_id=chunk_id, entities=entities, relations=relations)
