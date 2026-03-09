@@ -372,12 +372,12 @@ class EntityExtractor:
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "num_ctx": 1024,  # 512-token chunks need <1024 ctx; saves VRAM
-                    "num_predict": 512,  # entity JSON rarely exceeds 512 tokens
+                    "num_ctx": 2048,
+                    "num_predict": 512,
                     "temperature": 0,
                 },
             },
-            timeout=60,  # GPU inference of a 0.8B model should finish well within 60s
+            timeout=90,
         )
         resp.raise_for_status()
         return resp.json()["response"]
@@ -390,9 +390,12 @@ class EntityExtractor:
         - Markdown code fences (```json ... ```)
         - Leading/trailing text around the JSON object
         - Response wrapped in a JSON array instead of an object
+        - Qwen3 <think>...</think> reasoning preamble
         """
+        # Strip Qwen3 thinking blocks before anything else
+        cleaned = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
         # Strip markdown fences
-        cleaned = re.sub(r"```(?:json)?\s*", "", raw)
+        cleaned = re.sub(r"```(?:json)?\s*", "", cleaned)
         cleaned = cleaned.strip().rstrip("`").strip()
 
         # If the model wrapped the object in an array, unwrap the first element
