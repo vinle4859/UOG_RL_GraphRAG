@@ -32,7 +32,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.data.chunker import Chunk, TokenChunker
+from src.data.chunker import Chunk, ChunkingPipeline, TokenChunker
 from src.data.loader import load_documents
 from src.graph_rag.community import Community, detect_communities_leiden, summarise_community
 from src.graph_rag.entity_extractor import EntityExtractor
@@ -78,7 +78,7 @@ class GraphRAGPipeline:
         self.generator = generator or get_generator()
         self.graph_path = Path(graph_path)
 
-        self.chunker = TokenChunker()
+        self.chunker = ChunkingPipeline()
         self.extractor = EntityExtractor()
         self.kg = KnowledgeGraph()
         self.communities: list[Community] = []
@@ -105,7 +105,7 @@ class GraphRAGPipeline:
         if not docs:
             logger.warning("No documents found — aborting build.")
             return
-        chunks = self.chunker.chunk_documents(docs)
+        chunks = self.chunker.run(docs)
 
         # Step 2: Entity extraction
         logger.info("Extracting entities from %d chunks …", len(chunks))

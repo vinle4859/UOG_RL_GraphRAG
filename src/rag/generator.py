@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 
 from src.config import LLMProvider, get_settings
 from src.rag.vectorstore import SearchResult
+from src.utils.retry import openai_retry
 
 logger = logging.getLogger(__name__)
 
@@ -58,19 +59,23 @@ class BaseGenerator(ABC):
 class OpenAIGenerator(BaseGenerator):
     """Generate answers using the OpenAI Chat Completions API."""
 
-    def __init__(self, model: str = "gpt-4o-mini"):
+    def __init__(self, model: str | None = None):
         from openai import OpenAI
 
         settings = get_settings()
         self.client = OpenAI(api_key=settings.openai_api_key)
-        self.model = model
+        self.model = model or settings.llm_model_name
 
     def generate(self, query: str, context_chunks: list[SearchResult]) -> str:
         context_str = "\n\n".join(
             f"[{c.chunk_id}] {c.text}" for c in context_chunks
         )
         user_msg = RAG_USER_TEMPLATE.format(context=context_str, question=query)
+        return self._chat_with_retry(user_msg)
 
+    @openai_retry()
+    def _chat_with_retry(self, user_msg: str) -> str:
+        """Single chat completion call, wrapped with retry logic."""
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -95,7 +100,8 @@ class OllamaGenerator(BaseGenerator):
 
         settings = get_settings()
         self.base_url = settings.ollama_base_url
-        self.model = model or settings.ollama_model
+        self.model = model or settings.llm_model_name
+        logger.info("Using Ollama model: %s at %s", self.model, self.base_url)
 
     def generate(self, query: str, context_chunks: list[SearchResult]) -> str:
         import requests

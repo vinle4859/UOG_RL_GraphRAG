@@ -64,6 +64,7 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     llm_provider: LLMProvider = LLMProvider.OPENAI
+    llm_model_name: str = "gpt-4o-mini"  # model name for the active provider
     openai_api_key: Optional[str] = None
     azure_openai_endpoint: Optional[str] = None
     azure_openai_api_key: Optional[str] = None
@@ -97,6 +98,16 @@ class Settings(BaseSettings):
 
     # --- Retrieval ---
     top_k: int = Field(default=5, description="Number of retrieved chunks for RAG")
+
+    # --- API Retry / Rate-limit handling ---
+    api_max_retries: int = Field(default=6, description="Max retry attempts on quota/rate-limit errors")
+    api_initial_backoff: float = Field(default=1.0, description="Initial backoff delay in seconds")
+    api_max_backoff: float = Field(default=60.0, description="Maximum backoff delay in seconds")
+    api_backoff_factor: float = Field(default=2.0, description="Exponential backoff multiplier")
+    embedding_batch_size: int = Field(default=100, description="Max texts per OpenAI embedding request")
+
+    # --- Performance ---
+    num_workers: int = Field(default=4, description="Worker threads for parallel chunking/preprocessing")
 
     # --- Logging ---
     log_level: str = "INFO"
