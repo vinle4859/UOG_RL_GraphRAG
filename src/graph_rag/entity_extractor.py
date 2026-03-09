@@ -123,14 +123,27 @@ class EntityExtractor:
         )
         self.model = model or default_model
 
+    # Minimum fraction of tokens that must look like natural language
+    # before we bother calling the LLM.
+    _MATH_PASS_THRESHOLD: float = 0.5
+
     def extract(self, chunk_id: str, text: str) -> ExtractionResult:
         """
         Extract entities and relations from a single text chunk.
+
+        Math-heavy chunks (LaTeX, dense symbol sequences, pure proofs) are
+        detected by :meth:`_is_math_heavy` and silently skipped — returning
+        an empty result — to avoid malformed LLM output that wastes time and
+        corrupts the checkpoint.
 
         Returns
         -------
         ExtractionResult
         """
+        if self._is_math_heavy(text):
+            logger.debug("Skipping math-heavy chunk %s", chunk_id)
+            return ExtractionResult(chunk_id=chunk_id)
+
         raw_json = self._call_llm(text)
         return self._parse_response(chunk_id, raw_json)
 
@@ -215,6 +228,39 @@ class EntityExtractor:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_math_heavy(text: str) -> bool:
+        """Return True when *text* is dominated by mathematical notation.
+
+        A chunk is considered math-heavy (and skipped) when the ratio of
+        *natural-language word tokens* to *total whitespace-separated tokens*
+        falls below ``_MATH_PASS_THRESHOLD``.  A token counts as a natural-
+        language word when it consists predominantly of ASCII letters (≥ 60 %
+        of its characters are ``[a-zA-Z]``).
+
+        Additional hard triggers that force a skip regardless of the ratio:
+        - The chunk contains a LaTeX ``\\begin{...}`` / ``\\end{...}`` block.
+        - More than 20 % of all characters are common math symbols
+          (``+``, ``=``, ``<``, ``>``, ``^``, ``_``, ``\\``, ``|``, ``∑``,
+          ``∫``, ``∂``, ``∈``, ``≤``, ``≥``, ``≠``, ``→``, ``∞``).
+        """
+        # Hard trigger 1 — LaTeX environments
+        if re.search(r"\\begin\s*\{", text):
+            return True
+
+        # Hard trigger 2 — high density of math/operator characters
+        math_chars = set(r"+=<>^_\|∑∫∂∈≤≥≠→∞±×÷√θλσμπαβγδεζη")
+        math_char_ratio = sum(1 for c in text if c in math_chars) / max(len(text), 1)
+        if math_char_ratio > 0.20:
+            return True
+
+        # Soft check — fraction of word-like tokens
+        tokens = text.split()
+        if not tokens:
+            return False
+        word_tokens = sum(1 for t in tokens if sum(c.isalpha() for c in t) / max(len(t), 1) >= 0.60)
+        return (word_tokens / len(tokens)) < EntityExtractor._MATH_PASS_THRESHOLD
 
     @openai_retry()
     def _call_llm(self, text: str) -> str:
