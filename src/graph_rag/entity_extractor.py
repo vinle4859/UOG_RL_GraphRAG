@@ -64,11 +64,19 @@ class Relation:
 
 @dataclass
 class ExtractionResult:
-    """Entities + relations extracted from a single chunk."""
+    """Entities + relations extracted from a single chunk.
+
+    ``status`` values:
+    - ``"ok"``                — LLM returned valid JSON with ≥0 entities
+    - ``"skipped_math"``     — chunk was near-pure math after stripping (<20 word tokens)
+    - ``"skipped_llm_error"``— LLM response could not be parsed as JSON
+    - ``"failed"``           — unexpected exception during extraction
+    """
 
     chunk_id: str
     entities: list[Entity] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
+    status: str = "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +159,7 @@ class EntityExtractor:
         word_tokens = sum(1 for t in tokens if sum(c.isalpha() for c in t) / max(len(t), 1) >= 0.60)
         if word_tokens < 20:
             logger.debug("Skipping near-empty chunk %s after math stripping", chunk_id)
-            return ExtractionResult(chunk_id=chunk_id)
+            return ExtractionResult(chunk_id=chunk_id, status="skipped_math")
 
         raw_json = self._call_llm(cleaned)
         return self._parse_response(chunk_id, raw_json)
@@ -232,7 +240,7 @@ class EntityExtractor:
                 return self.extract(cid, txt)
             except Exception:
                 logger.exception("Extraction failed for chunk %s", cid)
-                return ExtractionResult(chunk_id=cid)
+                return ExtractionResult(chunk_id=cid, status="failed")
 
         try:
             pbar = tqdm(total=len(pending), desc="Extracting entities", unit="chunk")
@@ -266,6 +274,7 @@ class EntityExtractor:
             chunk_id=data["chunk_id"],
             entities=[Entity(**e) for e in data.get("entities", [])],
             relations=[Relation(**r) for r in data.get("relations", [])],
+            status=data.get("status", "ok"),  # default ok for old checkpoint lines
         )
 
     # ------------------------------------------------------------------
@@ -438,7 +447,7 @@ class EntityExtractor:
 
         if data is None:
             logger.warning("Invalid JSON from LLM for chunk %s — skipping.", chunk_id)
-            return ExtractionResult(chunk_id=chunk_id)
+            return ExtractionResult(chunk_id=chunk_id, status="skipped_llm_error")
 
         # Normalise entities: accept list-of-dicts OR list-of-strings
         raw_entities = data.get("entities", [])
@@ -478,4 +487,6 @@ class EntityExtractor:
                 )
             # Plain-string relations can't be meaningfully parsed — skip silently
 
-        return ExtractionResult(chunk_id=chunk_id, entities=entities, relations=relations)
+        return ExtractionResult(
+            chunk_id=chunk_id, entities=entities, relations=relations, status="ok"
+        )
