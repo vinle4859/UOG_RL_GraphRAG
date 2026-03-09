@@ -17,16 +17,17 @@ Design Notes
 
 TODO
 ----
-- [ ] Add caching so re-extraction on the same chunk is free.
 - [ ] Support batch extraction for Ollama / vLLM.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 from src.config import LLMProvider, get_settings
 from src.utils.retry import openai_retry
@@ -88,6 +89,8 @@ Rules:
 - Normalise entity names (e.g. "reinforcement learning" → "Reinforcement Learning").
 - Use concise relation labels (e.g. "uses", "outperforms", "is_variant_of").
 - Only output valid JSON — no markdown fences, no extra text.
+- If the text consists primarily of mathematical equations with no extractable
+  named entities, return exactly: {"entities": [], "relations": []}
 """
 
 
@@ -131,20 +134,83 @@ class EntityExtractor:
         raw_json = self._call_llm(text)
         return self._parse_response(chunk_id, raw_json)
 
-    def extract_batch(self, chunks: list[tuple[str, str]]) -> list[ExtractionResult]:
+    def extract_batch(
+        self,
+        chunks: list[tuple[str, str]],
+        checkpoint_path: Path | str | None = None,
+    ) -> list[ExtractionResult]:
         """
         Extract from multiple (chunk_id, text) pairs.
 
+        Supports checkpointing: results are appended to *checkpoint_path* (JSONL)
+        after each chunk so a crashed run can be resumed without re-processing
+        already-completed chunks.
+
+        Parameters
+        ----------
+        chunks : list of (chunk_id, text)
+        checkpoint_path : Path, optional
+            JSONL file to read existing results from and append new results to.
+            Pass the same path on every run to get resume behaviour.
+
         TODO: Parallelise with asyncio / thread pool for speed.
         """
-        results = []
-        for chunk_id, text in chunks:
-            try:
-                results.append(self.extract(chunk_id, text))
-            except Exception:
-                logger.exception("Extraction failed for chunk %s", chunk_id)
-                results.append(ExtractionResult(chunk_id=chunk_id))
+        from tqdm import tqdm
+
+        # --- Load checkpoint ---
+        checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
+        done: dict[str, ExtractionResult] = {}
+        if checkpoint_path and checkpoint_path.exists():
+            with open(checkpoint_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    with contextlib.suppress(Exception):
+                        rec = self._deserialize(json.loads(line))
+                        done[rec.chunk_id] = rec
+            logger.info(
+                "Checkpoint: %d/%d chunks already extracted — skipping.",
+                len(done),
+                len(chunks),
+            )
+
+        # --- Open checkpoint file for appending ---
+        ckpt_fh = None
+        if checkpoint_path:
+            checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            ckpt_fh = open(checkpoint_path, "a", encoding="utf-8")  # noqa: SIM115
+
+        # --- Process pending chunks ---
+        results: list[ExtractionResult] = list(done.values())
+        pending = [(cid, txt) for cid, txt in chunks if cid not in done]
+
+        try:
+            for chunk_id, text in tqdm(pending, desc="Extracting entities", unit="chunk"):
+                try:
+                    result = self.extract(chunk_id, text)
+                except Exception:
+                    logger.exception("Extraction failed for chunk %s", chunk_id)
+                    result = ExtractionResult(chunk_id=chunk_id)
+
+                results.append(result)
+                if ckpt_fh:
+                    ckpt_fh.write(json.dumps(asdict(result)) + "\n")
+                    ckpt_fh.flush()
+        finally:
+            if ckpt_fh:
+                ckpt_fh.close()
+
         return results
+
+    @staticmethod
+    def _deserialize(data: dict) -> ExtractionResult:
+        """Reconstruct an ExtractionResult from a checkpoint dict."""
+        return ExtractionResult(
+            chunk_id=data["chunk_id"],
+            entities=[Entity(**e) for e in data.get("entities", [])],
+            relations=[Relation(**r) for r in data.get("relations", [])],
+        )
 
     # ------------------------------------------------------------------
     # Private helpers
