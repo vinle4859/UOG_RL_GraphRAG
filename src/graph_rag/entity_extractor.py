@@ -752,14 +752,14 @@ class EntityExtractor:
         model_override: str | None = None,
     ) -> str:
         """Call a local Ollama server."""
-        import requests
+        from src.utils.ollama_client import ollama_post
 
         system = REPAIR_SYSTEM_PROMPT if repair_mode else EXTRACTION_SYSTEM_PROMPT
         model = model_override or self.model
         prompt = f"{system}\n\n{text}"
-        resp = requests.post(
+        data = ollama_post(
             f"{self._settings.ollama_base_url}/api/generate",
-            json={
+            payload={
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
@@ -771,10 +771,9 @@ class EntityExtractor:
                     "temperature": 0,
                 },
             },
-            timeout=self._settings.ollama_request_timeout,
+            read_timeout=self._settings.ollama_request_timeout,
         )
-        resp.raise_for_status()
-        return resp.json()["response"]
+        return data["response"]
 
     @staticmethod
     def _repair_json(raw: str) -> str:

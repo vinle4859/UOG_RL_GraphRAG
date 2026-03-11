@@ -220,16 +220,15 @@ def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
 
     try:
         if settings.llm_provider == LLMProvider.OLLAMA:
-            import requests
+            from src.utils.ollama_client import ollama_post
 
             ollama_model = model or settings.ollama_model
-            resp = requests.post(
+            data = ollama_post(
                 f"{settings.ollama_base_url}/api/generate",
-                json={"model": ollama_model, "prompt": prompt, "stream": False},
-                timeout=settings.ollama_request_timeout,
+                payload={"model": ollama_model, "prompt": prompt, "stream": False},
+                read_timeout=settings.ollama_request_timeout,
             )
-            resp.raise_for_status()
-            raw = resp.json()["response"].strip()
+            raw = data["response"].strip()
         else:
             from openai import OpenAI
 

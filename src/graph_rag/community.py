@@ -208,16 +208,15 @@ def summarise_community(
     settings = get_settings()
 
     if settings.llm_provider == LLMProvider.OLLAMA:
-        import requests
+        from src.utils.ollama_client import ollama_post
 
         ollama_model = model if model != "gpt-4o-mini" else settings.ollama_model
-        resp = requests.post(
+        data = ollama_post(
             f"{settings.ollama_base_url}/api/generate",
-            json={"model": ollama_model, "prompt": prompt, "stream": False},
-            timeout=settings.ollama_request_timeout,
+            payload={"model": ollama_model, "prompt": prompt, "stream": False},
+            read_timeout=settings.ollama_request_timeout,
         )
-        resp.raise_for_status()
-        summary = resp.json()["response"].strip()
+        summary = data["response"].strip()
     else:
         from openai import OpenAI
 

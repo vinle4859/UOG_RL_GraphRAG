@@ -105,7 +105,7 @@ class OllamaGenerator(BaseGenerator):
         logger.info("Using Ollama model: %s at %s", self.model, self.base_url)
 
     def generate(self, query: str, context_chunks: list[SearchResult]) -> str:
-        import requests
+        from src.utils.ollama_client import ollama_post
 
         context_str = "\n\n".join(f"[{c.chunk_id}] {c.text}" for c in context_chunks)
         prompt = (
@@ -114,13 +114,12 @@ class OllamaGenerator(BaseGenerator):
         )
 
         settings = get_settings()
-        resp = requests.post(
+        data = ollama_post(
             f"{self.base_url}/api/generate",
-            json={"model": self.model, "prompt": prompt, "stream": False},
-            timeout=settings.ollama_request_timeout,
+            payload={"model": self.model, "prompt": prompt, "stream": False},
+            read_timeout=settings.ollama_request_timeout,
         )
-        resp.raise_for_status()
-        return resp.json()["response"]
+        return data["response"]
 
 
 # ---------------------------------------------------------------------------
