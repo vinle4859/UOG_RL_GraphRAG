@@ -137,6 +137,64 @@ def build_graph(no_summarise: bool, limit: int | None, resume: bool, checkpoint:
     click.echo("GraphRAG build complete.")
 
 
+@main.command("build-topology")
+@click.option(
+    "--from-checkpoint",
+    "checkpoint_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False),
+    help="Extraction checkpoint JSONL to build the graph from.",
+)
+@click.option(
+    "--limit",
+    default=None,
+    type=int,
+    help="Max valid chunks to load (for quick partial tests).",
+)
+@click.option(
+    "--no-summarise",
+    is_flag=True,
+    help="Skip community summarisation (faster, no extra LLM calls).",
+)
+@click.option(
+    "--graph-out",
+    default=None,
+    type=click.Path(),
+    help="Output path for the graph file (default: data/graphs/knowledge_graph.graphml).",
+)
+def build_topology(
+    checkpoint_path: str,
+    limit: int | None,
+    no_summarise: bool,
+    graph_out: str | None,
+):
+    """Build graph + communities from an existing extraction checkpoint.
+
+    Safe to run while a concurrent extraction job is still writing to the same
+    checkpoint — an isolated snapshot copy is used for reading.
+
+    Examples:
+
+    \b
+        rag-bench build-topology --from-checkpoint data/graphs/extraction_checkpoint.jsonl
+        rag-bench build-topology --from-checkpoint data/graphs/extraction_checkpoint.jsonl \\
+            --limit 1000 --no-summarise
+    """
+    from src.graph_rag.pipeline import GraphRAGPipeline
+
+    kwargs = {}
+    if graph_out:
+        kwargs["graph_path"] = graph_out
+
+    pipe = GraphRAGPipeline(**kwargs)
+    pipe.build_topology_from_checkpoint(
+        checkpoint_path=checkpoint_path,
+        limit=limit,
+        summarise=not no_summarise,
+    )
+    click.echo("build-topology complete.")
+
+
 @main.command()
 @click.argument("question")
 @click.option("--pipeline", type=click.Choice(["rag", "graphrag"]), default="rag")

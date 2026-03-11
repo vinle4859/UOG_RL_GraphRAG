@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,7 +39,7 @@ from tqdm import tqdm
 from src.data.chunker import Chunk, ChunkingPipeline
 from src.data.loader import load_documents
 from src.graph_rag.community import Community, detect_communities_leiden, summarise_community
-from src.graph_rag.entity_extractor import EntityExtractor
+from src.graph_rag.entity_extractor import EntityExtractor, ExtractionResult
 from src.graph_rag.graph_builder import KnowledgeGraph
 from src.graph_rag.retriever import GraphRetriever, GraphSearchResult, SearchMode
 from src.rag.embedder import BaseEmbedder, get_embedder
@@ -195,6 +196,149 @@ class GraphRAGPipeline:
         )
 
         logger.info("GraphRAG build complete.")
+
+    # ------------------------------------------------------------------
+    # Topology-only build from existing checkpoint (safe for concurrent use)
+    # ------------------------------------------------------------------
+
+    def build_topology_from_checkpoint(
+        self,
+        checkpoint_path: Path | str,
+        limit: int | None = None,
+        summarise: bool = True,
+    ) -> None:
+        """Build graph topology from a pre-existing extraction checkpoint JSONL.
+
+        Safe to call while a concurrent extraction job is still appending to the
+        same file — an atomic snapshot copy is taken before reading so there are
+        no I/O lock collisions and no risk of reading a partially-written line
+        from the live file.
+
+        Parameters
+        ----------
+        checkpoint_path :
+            Path to the extraction checkpoint JSONL file.
+        limit :
+            Maximum number of *valid* chunks to load.  Useful for quick partial
+            tests (e.g. ``--limit 1000``).
+        summarise :
+            Whether to run community summarisation (costs extra LLM calls).
+        """
+        checkpoint_path = Path(checkpoint_path)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+        # --- Step 1: Atomic snapshot to avoid I/O collision -------------------
+        snapshot_path = checkpoint_path.with_suffix(".snapshot.jsonl")
+        logger.info("Snapshotting checkpoint → %s", snapshot_path)
+        shutil.copy2(checkpoint_path, snapshot_path)
+
+        # --- Step 2: Read snapshot line-by-line --------------------------------
+        good_statuses = {"ok", "fallback_success"}
+        loaded = skipped_status = parse_errors = 0
+        total_entities = total_relations = 0
+        results: list[ExtractionResult] = []
+
+        try:
+            with snapshot_path.open(encoding="utf-8") as fh:
+                for lineno, raw_line in enumerate(fh, start=1):
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+
+                    # Tolerate partial writes at EOF (the running extractor may
+                    # have been mid-write when we snapshotted).
+                    try:
+                        data = json.loads(raw_line)
+                    except json.JSONDecodeError as exc:
+                        parse_errors += 1
+                        logger.warning(
+                            "Line %d: JSON parse error (possibly a partial write from "
+                            "concurrent extractor) — skipping. Detail: %s",
+                            lineno,
+                            exc,
+                        )
+                        continue
+
+                    status = data.get("status", "ok")
+                    if status not in good_statuses:
+                        skipped_status += 1
+                        continue
+
+                    try:
+                        result = EntityExtractor._deserialize(data)
+                    except Exception as exc:
+                        parse_errors += 1
+                        logger.warning(
+                            "Line %d (chunk_id=%r): deserialization failed — skipping. %s",
+                            lineno,
+                            data.get("chunk_id", "?"),
+                            exc,
+                        )
+                        continue
+
+                    total_entities += len(result.entities)
+                    total_relations += len(result.relations)
+                    results.append(result)
+                    loaded += 1
+
+                    if limit is not None and loaded >= limit:
+                        logger.info("Limit of %d chunks reached — stopping read.", limit)
+                        break
+        finally:
+            snapshot_path.unlink(missing_ok=True)
+            logger.debug("Snapshot removed: %s", snapshot_path)
+
+        logger.info(
+            "Checkpoint read: %d loaded, %d skipped (non-ok status), %d parse errors.",
+            loaded,
+            skipped_status,
+            parse_errors,
+        )
+        logger.info(
+            "Entities loaded: %d   Relations loaded: %d",
+            total_entities,
+            total_relations,
+        )
+
+        if not results:
+            logger.warning("No valid extraction results found — graph will be empty.")
+
+        # --- Step 3: Build graph -----------------------------------------------
+        logger.info("Building graph from %d extraction results …", len(results))
+        self.kg.add_extractions(results)
+        self.graph_path.parent.mkdir(parents=True, exist_ok=True)
+        self.kg.save(self.graph_path)
+        logger.info(
+            "Graph saved → %s  (%d nodes, %d edges).",
+            self.graph_path,
+            self.kg.graph.number_of_nodes(),
+            self.kg.graph.number_of_edges(),
+        )
+
+        # --- Step 4: Community detection ---------------------------------------
+        self.communities = detect_communities_leiden(self.kg.graph)
+        logger.info("Detected %d communities.", len(self.communities))
+
+        if summarise:
+            logger.info("Summarising %d communities …", len(self.communities))
+            for comm in tqdm(self.communities, desc="Summarising communities", unit="community"):
+                try:
+                    summarise_community(comm, self.kg.graph)
+                except Exception:
+                    logger.exception("Failed to summarise community %d", comm.community_id)
+        else:
+            logger.info("Community summarisation skipped (--no-summarise).")
+
+        # --- Step 5: Initialise retriever -------------------------------------
+        self.retriever = GraphRetriever(
+            graph=self.kg.graph,
+            communities=self.communities,
+            embedder=self.embedder,
+            vectorstore=self.vectorstore,
+        )
+
+        logger.info("build-topology complete — graph ready for querying.")
 
     def _index_chunks(self, chunks: list[Chunk], batch_size: int) -> None:
         """Embed and index chunks in the vector store."""

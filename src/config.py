@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     azure_openai_deployment_name: str | None = None
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
+    # Fallback model used when the primary model fails after repair retry.
+    # Set to a larger model (e.g. "llama3.2:3b") in .env as OLLAMA_FALLBACK_MODEL.
+    # Leave unset (empty string) to disable fallback escalation.
+    ollama_fallback_model: str | None = None
 
     # --- Embedding ---
     embedding_provider: EmbeddingProvider = EmbeddingProvider.SENTENCE_TRANSFORMERS
