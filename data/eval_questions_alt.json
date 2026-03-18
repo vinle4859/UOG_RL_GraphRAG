@@ -1,0 +1,181 @@
+[
+  {
+    "question": "What is the LNA finetuning strategy and what proportion of parameters does it train?",
+    "reference_answer": "The LNA (LayerNorm and Attention) finetuning strategy involves training only specific modules of the pre-trained Wav2Vec 2.0 and mBART models, specifically the layer normalization, encoder self-attention, and encoder-decoder attention. This accounts for only 20% of the total model parameters while achieving performance similar to finetuning the entire model.",
+    "relevant_doc_ids": [
+      "2105.04512"
+    ]
+  },
+  {
+    "question": "What is the relationship between the Sinkhorn algorithm and the parabolic Monge-Ampère (PMA) PDE in the context of Wasserstein mirror gradient flows?",
+    "reference_answer": "As the regularization parameter approaches zero, the marginal distributions of the Sinkhorn algorithm converge to an absolutely continuous curve called the Sinkhorn flow, which is a type of Wasserstein mirror gradient flow. An equivalent description of this flow is provided by the parabolic Monge-Ampère (PMA) PDE, which specifically tracks the evolution of the underlying Sinkhorn potentials.",
+    "relevant_doc_ids": [
+      "2307.16421"
+    ]
+  },
+  {
+    "question": "How do the ASC framework and the COMSPLIT design respectively address the issue of unreliable or scarce data at the edge?",
+    "reference_answer": "The ASC framework addresses data scarcity in target domains for few-shot classification by adaptively reusing source domain images and enforcing semantic consistency to preserve transferable knowledge without overfitting. In contrast, COMSPLIT addresses poor communication channel conditions between IoT edge devices and servers by simulating channel distortions during offline training and introducing an early-exit strategy to make local predictions when the channel is severely degraded.",
+    "relevant_doc_ids": [
+      "2308.00727",
+      "2410.19375"
+    ]
+  },
+  {
+    "question": "How does the proposed MPC-based reinforcement learning approach differ from the n-step Temporal Difference (n-TD) baseline in terms of environmental interaction?",
+    "reference_answer": "While n-TD relies on multi-step interactions directly with the real environment, making it vulnerable to cumulative deviations in interaction data, the MPC-based RL approach performs multi-step approximations within a deterministic, learned environment model. By leveraging rolling optimization over a predicted horizon within this model, the MPC-based method avoids real-world interaction accumulation errors and achieves faster convergence to local optimal policies with fewer required real-environment samples.",
+    "relevant_doc_ids": [
+      "2310.16646"
+    ]
+  },
+  {
+    "question": "According to the FGBench evaluations, what are the primary failure modes of current LLMs when reasoning about functional group-level molecular properties?",
+    "reference_answer": "Current LLMs struggle significantly when reasoning about interactions among multiple functional groups, leading to sharp accuracy drops compared to predicting single functional group impacts. Additionally, models often fail in factual interpretation and transferability across molecular scaffolds; for instance, they may correctly recall a chemical case but incorrectly contextualize its applicability or misjudge the directional shift of a property.",
+    "relevant_doc_ids": [
+      "2508.01055"
+    ]
+  },
+  {
+    "question": "What are the clinical implications of implementing the DeepFoqus-Accelerate algorithm for brain MRI scans?",
+    "reference_answer": "DeepFoqus-Accelerate enables up to a fourfold acceleration of brain MRI scans, resulting in a 75% reduction in scan time. Clinically, this translates to improved workflow efficiency, greater patient throughput, decreased patient discomfort, and a reduced risk of motion artifacts, all while preserving diagnostic image quality comparable to standard-of-care, fully-sampled scans.",
+    "relevant_doc_ids": [
+      "2509.07193"
+    ]
+  },
+  {
+    "question": "How do the systems described for end-to-end speech translation and COMSPLIT utilize adapter or feature-reduction modules to bridge distinct components?",
+    "reference_answer": "In the end-to-end speech translation system, an Adapter module and a Length Adaptor are used after the Wav2Vec 2.0 encoder to project features, reduce length discrepancy, and adapt modalities before passing data to the mBART decoder. Similarly, COMSPLIT bridges edge device and server components by having the edge device compute a compressed intermediate representation (often utilizing an LSTM layer) that significantly reduces data size before transmission over unreliable wireless channels.",
+    "relevant_doc_ids": [
+      "2105.04512",
+      "2410.19375"
+    ]
+  },
+  {
+    "question": "Both RoboMoRe and the filtered probabilistic MPC method utilize multi-step or multi-stage mechanisms to optimize robot performance or policy. How do their optimization structures differ?",
+    "reference_answer": "RoboMoRe employs a coarse-to-fine optimization framework that jointly refines robot morphology and reward functions using an LLM to explore and iteratively update design gradients. In contrast, the MPC-based RL method focuses exclusively on action policy by estimating multi-step value functions through rolling predictions over an explicitly modeled state transition and reward function, simultaneously maximizing short- and long-term cumulative returns.",
+    "relevant_doc_ids": [
+      "2506.00276",
+      "2310.16646"
+    ]
+  },
+  {
+    "question": "How do the Adaptive Semantic Consistency (ASC) framework and the theory of Wasserstein mirror gradient flows utilize distance measurements to align distributions or features?",
+    "reference_answer": "The ASC framework uses Euclidean distance in the feature space between individual source samples and the target domain's support set prototype to adaptively weight and transfer relevant semantic features. Conversely, the Wasserstein mirror gradient flow analyzes the 2-Wasserstein distance (which measures the optimal transport cost between probability measures) to geometrically characterize the continuous-time convergence limit of the discrete Sinkhorn algorithm iterates.",
+    "relevant_doc_ids": [
+      "2308.00727",
+      "2307.16421"
+    ]
+  },
+  {
+    "question": "Why do end-to-end speech translation systems inherently struggle to achieve the performance of cascade models, and how was this mitigated for the IWSLT 2021 offline task?",
+    "reference_answer": "End-to-end ST systems struggle because they lack as many dedicated training datasets as standalone ASR and MT tasks, and their encoder must simultaneously perform complex acoustic modeling and semantic encoding. To mitigate this, researchers utilized large pre-trained components (a Wav2Vec 2.0 encoder and an mBART decoder) combined with LNA finetuning and custom coupling adapters to leverage powerful external self-supervised representations.",
+    "relevant_doc_ids": [
+      "2105.04512"
+    ]
+  },
+  {
+    "question": "How do theoretical limits or bounds play a role in proving convergence or policy improvement in the studies of the Sinkhorn algorithm and MPC-based reinforcement learning?",
+    "reference_answer": "In the study of the Sinkhorn algorithm, analyzing the mathematical limit as the regularization parameter goes to zero proves that the algorithm's discrete marginal distributions converge to an absolutely continuous curve defined as a Wasserstein mirror gradient flow. In MPC-based RL, theoretical bounds on policy returns explicitly guarantee monotonic improvement over model-free methods, provided the strategy enhances its return under the environment model by an amount exceeding calculated generalization and distribution shift errors.",
+    "relevant_doc_ids": [
+      "2307.16421",
+      "2310.16646"
+    ]
+  },
+  {
+    "question": "In the RoboMoRe framework, what is the primary failure mode of generating designs using random sampling without Diversity Reflection?",
+    "reference_answer": "Without Diversity Reflection, random sampling often generates low-quality, unbalanced, or bulky morphologies. Standard LLM generation without explicit diversity mechanisms tends to produce repetitive offspring, which causes the optimization process to prematurely converge on suboptimal local maxima instead of broadly exploring a wider, more performant design space.",
+    "relevant_doc_ids": [
+      "2506.00276"
+    ]
+  },
+  {
+    "question": "How could the explicit extraction of functional groups in FGBench be conceptually compared to the extraction of target-related features in the ASC framework?",
+    "reference_answer": "FGBench explicitly isolates specific functional groups to create a structured mapping that explains how molecular property modifications correlate with fine-grained chemical features, prioritizing high-information structural segments. Similarly, the ASC framework isolates and highlights specific target-related semantic features from source images by assigning higher adaptive weights to source samples that are Euclidean-closest to the target domain, filtering out irrelevant noise to improve few-shot generalization.",
+    "relevant_doc_ids": [
+      "2508.01055",
+      "2308.00727"
+    ]
+  },
+  {
+    "question": "How does COMSPLIT's training over simulated AWGN channels compare to vanilla split learning approaches tested under noisy conditions?",
+    "reference_answer": "Vanilla split learning approaches trained under ideal channel conditions suffer an order-of-magnitude degradation in mean-squared error (MSE) when exposed to AWGN noise during testing. COMSPLIT intentionally incorporates a noise layer during offline training to simulate AWGN and deep fades, which acts as a regularizer and yields highly resilient online inference that significantly outperforms the vanilla baseline under identical noisy testing conditions.",
+    "relevant_doc_ids": [
+      "2410.19375"
+    ]
+  },
+  {
+    "question": "What types of quantitative metrics were used to evaluate the similarity between DeepFoqus-Accelerate reconstructions and standard-of-care MRI images?",
+    "reference_answer": "The evaluations utilized the Structural Similarity Index Measure (SSIM), Peak Signal-to-Noise Ratio (PSNR), and the Haar wavelet-based Perceptual Similarity Index (HaarPSI). These metrics demonstrated high structural and perceptual similarity, consistently showing mean SSIM values above 0.95 and PSNR values exceeding 41 dB.",
+    "relevant_doc_ids": [
+      "2509.07193"
+    ]
+  },
+  {
+    "question": "Both the DeepFoqus-Accelerate algorithm and the COMSPLIT framework aim to reduce latency or processing delays but target entirely different modalities. How do their specific acceleration strategies compare?",
+    "reference_answer": "DeepFoqus-Accelerate reduces physical MRI scan time by heavily undersampling phase-encoding lines in k-space data, relying on a deep neural network to reconstruct the omitted data without losing diagnostic quality. In contrast, COMSPLIT reduces communication latency in IoT networks by splitting neural network computations, transmitting only compressed intermediate representations over wireless channels, and employing an early-exit strategy to bypass server transmission entirely when channels are poor.",
+    "relevant_doc_ids": [
+      "2509.07193",
+      "2410.19375"
+    ]
+  },
+  {
+    "question": "What is the significance of viewing the Sinkhorn flow as a Wasserstein mirror gradient flow?",
+    "reference_answer": "Viewing the Sinkhorn flow as a Wasserstein mirror gradient flow provides a novel geometric and continuous-time characterization of the algorithm's sequence of marginal distributions. This establishes a formal connection to Parabolic Monge-Ampère PDEs and enables the construction of Mckean-Vlasov diffusions whose marginal distributions precisely track the algorithm's evolution.",
+    "relevant_doc_ids": [
+      "2307.16421"
+    ]
+  },
+  {
+    "question": "In what way do high-dimensional state and action spaces limit both the MPC-based reinforcement learning method and LLM-based robot co-design without a coarse-to-fine structure?",
+    "reference_answer": "In MPC-based RL, high-dimensional environments prevent the environmental model's loss functions from converging to zero, leading to accumulated model errors that cause the policy to reach a sub-optimal rather than global optimal value. Similarly, in LLM-based robot co-design, high-dimensional morphology and reward spaces make it exceedingly difficult for the LLM to directly guess near-optimal designs, necessitating a coarse initial search stage to approximate the distribution before performing fine gradient-based refinements.",
+    "relevant_doc_ids": [
+      "2310.16646",
+      "2506.00276"
+    ]
+  },
+  {
+    "question": "How do the FGBench dataset generation process and the RoboMoRe design framework utilize specific structural modifications or masking to evaluate or generate new properties/morphologies?",
+    "reference_answer": "FGBench validates functional group differences by physically modifying the molecule—removing the differing functional group from the source and reconstructing it with the target's functional group to ensure chemical validity. In contrast, RoboMoRe modifies MuJoCo XML structural files by explicitly masking existing morphology parameters, ensuring the LLM generates entirely novel physical structures without being biased by pre-existing, human-engineered priors.",
+    "relevant_doc_ids": [
+      "2508.01055",
+      "2506.00276"
+    ]
+  },
+  {
+    "question": "How does the Adaptive Semantic Consistency (ASC) method compare to the DELTA transfer learning baseline when applied to cross-domain few-shot classification?",
+    "reference_answer": "DELTA regularizes mid-level features using target images, which can lead to negative transfer and overly constrained parameters when target data is severely limited (few-shot). ASC outperforms this by regularizing semantic-level features and explicitly reusing reweighted source images rather than target images, which better preserves prior target-related knowledge without suffering from catastrophic negative transfer.",
+    "relevant_doc_ids": [
+      "2308.00727"
+    ]
+  },
+  {
+    "question": "How do the data augmentation techniques in the speech translation study conceptually mirror the undersampling approach in the accelerated brain MRI study?",
+    "reference_answer": "The speech translation system artificially augments data by applying tempo, pitch, and echo effects to simulate real-world audio diversity without collecting new physical recordings. Conversely, the MRI study physically skips data collection by undersampling phase-encoding lines, simulating acceleration retroactively on fully-sampled datasets and relying on deep learning algorithms to artificially reconstruct a complete diagnostic image from the partial physical data.",
+    "relevant_doc_ids": [
+      "2105.04512",
+      "2509.07193"
+    ]
+  },
+  {
+    "question": "What is the specific role of the 'Diversity Reflection' mechanism in the RoboMoRe framework's coarse optimization stage?",
+    "reference_answer": "Diversity Reflection is a mechanism where the LLM reviews previously generated morphology and reward candidates, and deliberately produces a new design that maximizes structural and behavioral variation compared to those prior candidates. This ensures the initial grid search broadly explores the joint design space and avoids premature convergence on local optima.",
+    "relevant_doc_ids": [
+      "2506.00276"
+    ]
+  },
+  {
+    "question": "How does reliance on limited local data constrain both IoT split-learning edge devices and few-shot cross-domain classifiers?",
+    "reference_answer": "In IoT split-learning, edge devices are constrained by computational limits and the inability to reliably offload complex data representations when wireless channels degrade, forcing them to rely on less accurate local 'early-exit' models. In cross-domain classifiers, relying strictly on limited local target data leads to severe overfitting and the abandonment of transferable source knowledge, a problem mitigated only by adaptively integrating related source-domain semantic representations.",
+    "relevant_doc_ids": [
+      "2410.19375",
+      "2308.00727"
+    ]
+  },
+  {
+    "question": "According to the UPC ST group, why is their custom segmentation approach critical for the IWSLT evaluation test sets?",
+    "reference_answer": "The automatic tool provided for the evaluation data does not guarantee that segments align properly with translated text or form coherent sentences. By employing a custom segmentation algorithm using Wav2Vec 2.0 to identify untranscribable periods, the system generates better-aligned, sentence-like segments, yielding a 2.5 to 3 BLEU score improvement over the provided segmentation.",
+    "relevant_doc_ids": [
+      "2105.04512"
+    ]
+  }
+]

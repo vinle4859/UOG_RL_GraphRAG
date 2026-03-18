@@ -101,6 +101,7 @@ class GraphRAGPipeline:
         limit: int | None = None,
         resume: bool = False,
         checkpoint_path: Path | str | None = None,
+        extraction_workers: int | None = None,
     ) -> None:
         """
         Run the full build pipeline: chunk → extract → graph → communities
@@ -120,6 +121,9 @@ class GraphRAGPipeline:
         checkpoint_path : Path, optional
             JSONL file for per-chunk extraction checkpointing.  Defaults to
             ``data/graphs/extraction_checkpoint.jsonl`` when *resume* is True.
+        extraction_workers : int, optional
+            Number of concurrent extraction worker threads for LLM calls.
+            If omitted, provider-specific defaults from settings are used.
         """
         # Step 1: Load, deduplicate, optionally cap & filter already-indexed docs
         docs = load_documents()
@@ -162,7 +166,11 @@ class GraphRAGPipeline:
 
         logger.info("Extracting entities from %d chunks …", len(chunks))
         extraction_inputs = [(c.chunk_id, c.text) for c in chunks]
-        results = self.extractor.extract_batch(extraction_inputs, checkpoint_path=ckpt)
+        results = self.extractor.extract_batch(
+            extraction_inputs,
+            checkpoint_path=ckpt,
+            num_workers=extraction_workers,
+        )
 
         # Step 3: Build graph
         self.kg.add_extractions(results)

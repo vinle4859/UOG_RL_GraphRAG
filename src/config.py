@@ -108,6 +108,11 @@ class Settings(BaseSettings):
     ollama_request_timeout: int = Field(
         default=300, description="HTTP read timeout (seconds) for Ollama generate requests"
     )
+    ollama_extraction_workers: int = Field(
+        default=1,
+        ge=1,
+        description="Concurrent worker threads for GraphRAG entity extraction with Ollama",
+    )
 
     # --- API Retry / Rate-limit handling ---
     api_max_retries: int = Field(

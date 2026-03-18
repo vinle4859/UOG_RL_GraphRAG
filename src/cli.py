@@ -123,7 +123,19 @@ def retrieve(question: str, data_dir: str | None, top_k: int):
     type=click.Path(),
     help="Explicit path for the extraction checkpoint JSONL file.",
 )
-def build_graph(no_summarise: bool, limit: int | None, resume: bool, checkpoint: str | None):
+@click.option(
+    "--extract-workers",
+    default=None,
+    type=int,
+    help="Concurrent extraction workers for LLM calls (default: provider setting).",
+)
+def build_graph(
+    no_summarise: bool,
+    limit: int | None,
+    resume: bool,
+    checkpoint: str | None,
+    extract_workers: int | None,
+):
     """Build the full GraphRAG pipeline (extract → graph → communities)."""
     from src.graph_rag.pipeline import GraphRAGPipeline
 
@@ -133,6 +145,7 @@ def build_graph(no_summarise: bool, limit: int | None, resume: bool, checkpoint:
         limit=limit,
         resume=resume,
         checkpoint_path=checkpoint,
+        extraction_workers=extract_workers,
     )
     click.echo("GraphRAG build complete.")
 
@@ -251,6 +264,11 @@ def query(question: str, pipeline: str, top_k: int):
     help="Enable comprehensiveness and diversity LLM judges (slowest mode).",
 )
 @click.option(
+    "--efficiency-tracking/--no-efficiency-tracking",
+    default=True,
+    help="Track efficiency metrics (latency/context size/token estimate) in benchmark rows.",
+)
+@click.option(
     "--jsonl-log/--no-jsonl-log",
     default=True,
     help="Write per-run JSONL benchmark log under results/benchmark_runs/.",
@@ -261,6 +279,7 @@ def benchmark(
     graphrag_modes: tuple[str, ...],
     faithfulness: bool,
     quality_judges: bool,
+    efficiency_tracking: bool,
     jsonl_log: bool,
 ):
     """Run side-by-side benchmark evaluation."""
@@ -282,6 +301,7 @@ def benchmark(
         graphrag_modes=modes,
         compute_faithfulness=faithfulness,
         compute_quality_judges=quality_judges,
+        compute_efficiency_tracking=efficiency_tracking,
     )
     df = runner.run(questions_path, write_jsonl_log=jsonl_log)
 

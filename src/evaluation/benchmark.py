@@ -33,8 +33,8 @@ import pandas as pd
 
 from src.evaluation.metrics import (
     comprehensiveness_score,
-    diversity_score,
     directness_score,
+    diversity_score,
     empowerment_score,
     faithfulness_score,
     mean_reciprocal_rank,
@@ -63,9 +63,11 @@ def _estimate_tokens(text: str) -> int:
 # Data Models
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class EvalQuestion:
     """A single evaluation question with optional ground truth."""
+
     question: str
     reference_answer: str = ""
     relevant_doc_ids: list[str] = field(default_factory=list)
@@ -74,6 +76,7 @@ class EvalQuestion:
 @dataclass
 class EvalRecord:
     """Metrics for one question + one pipeline."""
+
     question: str
     pipeline: str  # "rag", "graphrag_local", "graphrag_global", "graphrag_graph_only", etc.
     run_id: str = ""
@@ -90,7 +93,7 @@ class EvalRecord:
     recall_5: float = 0.0
     mrr: float = 0.0
     rouge1: float = 0.0
-    rougeL: float = 0.0
+    rougeL: float = 0.0  # noqa: N815 - kept for backward-compatible report schema
     faithfulness: float = 0.0
     comprehensiveness: float = 0.0
     diversity: float = 0.0
@@ -103,6 +106,7 @@ class EvalRecord:
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
+
 
 class BenchmarkRunner:
     """
@@ -128,6 +132,8 @@ class BenchmarkRunner:
     compute_quality_judges : bool
         Whether to run additional LLM judges: comprehensiveness,
         diversity, directness, and empowerment.
+    compute_efficiency_tracking : bool
+        Whether to compute efficiency metrics (latency/context size/token estimate).
     """
 
     def __init__(
@@ -137,12 +143,14 @@ class BenchmarkRunner:
         graphrag_modes: list[str] | None = None,
         compute_faithfulness: bool = False,
         compute_quality_judges: bool = False,
+        compute_efficiency_tracking: bool = True,
     ):
         self.rag = rag_pipeline
         self.graphrag = graphrag_pipeline
         self.graphrag_modes = graphrag_modes or ["local", "global", "graph_only", "hybrid"]
         self.compute_faithfulness = compute_faithfulness
         self.compute_quality_judges = compute_quality_judges
+        self.compute_efficiency_tracking = compute_efficiency_tracking
         self._run_id = ""
         self._timestamp_utc = ""
 
@@ -252,14 +260,12 @@ class BenchmarkRunner:
 
         embedding_model = ""
         if self.rag is not None and getattr(self.rag, "embedder", None) is not None:
-            embedding_model = (
-                getattr(self.rag.embedder, "model_name", "")
-                or getattr(self.rag.embedder, "model", "")
+            embedding_model = getattr(self.rag.embedder, "model_name", "") or getattr(
+                self.rag.embedder, "model", ""
             )
         elif self.graphrag is not None and getattr(self.graphrag, "embedder", None) is not None:
-            embedding_model = (
-                getattr(self.graphrag.embedder, "model_name", "")
-                or getattr(self.graphrag.embedder, "model", "")
+            embedding_model = getattr(self.graphrag.embedder, "model_name", "") or getattr(
+                self.graphrag.embedder, "model", ""
             )
 
         return {
@@ -277,13 +283,23 @@ class BenchmarkRunner:
         """Evaluate standard RAG on one question."""
         t0 = time.perf_counter()
         result = self.rag.query(eq.question, top_k=top_k)
-        latency = time.perf_counter() - t0
+        latency = time.perf_counter() - t0 if self.compute_efficiency_tracking else 0.0
 
         retrieved_ids = [c.chunk_id for c in result.retrieved_chunks]
         relevant = set(eq.relevant_doc_ids)
 
-        context = "\n\n".join(c.text for c in result.retrieved_chunks)
+        needs_context = (
+            self.compute_efficiency_tracking
+            or self.compute_faithfulness
+            or self.compute_quality_judges
+        )
+        context = "\n\n".join(c.text for c in result.retrieved_chunks) if needs_context else ""
         meta = self._get_model_metadata()
+
+        context_char_count = len(context) if self.compute_efficiency_tracking else 0
+        estimated_context_tokens = (
+            _estimate_tokens(context) if self.compute_efficiency_tracking else 0
+        )
 
         rec = EvalRecord(
             run_id=self._run_id,
@@ -301,8 +317,8 @@ class BenchmarkRunner:
             precision_5=precision_at_k(retrieved_ids, relevant, top_k),
             recall_5=recall_at_k(retrieved_ids, relevant, top_k),
             mrr=mean_reciprocal_rank(retrieved_ids, relevant),
-            context_char_count=len(context),
-            estimated_context_tokens=_estimate_tokens(context),
+            context_char_count=context_char_count,
+            estimated_context_tokens=estimated_context_tokens,
         )
 
         if eq.reference_answer:
@@ -342,19 +358,31 @@ class BenchmarkRunner:
         search_mode = SearchMode(mode)
         t0 = time.perf_counter()
         result = self.graphrag.query(eq.question, mode=search_mode, top_k=top_k)
-        latency = time.perf_counter() - t0
+        latency = time.perf_counter() - t0 if self.compute_efficiency_tracking else 0.0
 
         chunk_results = result.search_result.chunk_results if result.search_result else []
         retrieved_ids = [c.chunk_id for c in chunk_results]
         relevant = set(eq.relevant_doc_ids)
 
-        context_parts = [c.text for c in chunk_results]
-        if result.search_result and result.search_result.graph_context:
-            context_parts.append(result.search_result.graph_context)
-        for summary in (result.search_result.community_summaries if result.search_result else []):
-            context_parts.append(summary)
-        context = "\n\n".join(context_parts)
+        needs_context = (
+            self.compute_efficiency_tracking
+            or self.compute_faithfulness
+            or self.compute_quality_judges
+        )
+        context = ""
+        if needs_context:
+            context_parts = [c.text for c in chunk_results]
+            if result.search_result and result.search_result.graph_context:
+                context_parts.append(result.search_result.graph_context)
+            for summary in result.search_result.community_summaries if result.search_result else []:
+                context_parts.append(summary)
+            context = "\n\n".join(context_parts)
         meta = self._get_model_metadata()
+
+        context_char_count = len(context) if self.compute_efficiency_tracking else 0
+        estimated_context_tokens = (
+            _estimate_tokens(context) if self.compute_efficiency_tracking else 0
+        )
 
         rec = EvalRecord(
             run_id=self._run_id,
@@ -372,8 +400,8 @@ class BenchmarkRunner:
             precision_5=precision_at_k(retrieved_ids, relevant, top_k),
             recall_5=recall_at_k(retrieved_ids, relevant, top_k),
             mrr=mean_reciprocal_rank(retrieved_ids, relevant),
-            context_char_count=len(context),
-            estimated_context_tokens=_estimate_tokens(context),
+            context_char_count=context_char_count,
+            estimated_context_tokens=estimated_context_tokens,
         )
 
         if eq.reference_answer:

@@ -154,14 +154,17 @@ class EntityExtractor:
         self.model = model or default_model
         # Fallback model used after primary + repair retry both fail.
         self._fallback_model: str | None = getattr(self._settings, "ollama_fallback_model", None)
+        self._default_ollama_workers: int = max(
+            1,
+            int(getattr(self._settings, "ollama_extraction_workers", self._DEFAULT_OLLAMA_WORKERS)),
+        )
 
     # Minimum fraction of tokens that must look like natural language
     # before we bother calling the LLM.
     _MATH_PASS_THRESHOLD: float = 0.5
 
-    # Max concurrent Ollama requests.  2-3 works well for a 0.8B model on
-    # a 4 GB VRAM GPU; increase if VRAM headroom allows.
-    _DEFAULT_OLLAMA_WORKERS: int = 1  # Ollama is sequential on GPU; parallelism stacks wait time
+    # Fallback default when settings are unavailable.
+    _DEFAULT_OLLAMA_WORKERS: int = 1
 
     # Ollama effective context window (tokens).  Must match num_ctx below.
     _OLLAMA_NUM_CTX: int = 2048
@@ -428,7 +431,7 @@ class EntityExtractor:
 
         Concurrent Ollama requests are issued via a thread pool so GPU
         utilisation stays high.  *num_workers* defaults to
-        ``_DEFAULT_OLLAMA_WORKERS`` (3) for Ollama and 1 for OpenAI
+        ``settings.ollama_extraction_workers`` for Ollama and 1 for OpenAI
         (rate-limited API).
 
         Parameters
@@ -438,14 +441,15 @@ class EntityExtractor:
             JSONL file to read existing results from and append new results to.
             Pass the same path on every run to get resume behaviour.
         num_workers : int, optional
-            Number of concurrent LLM requests.  Defaults to 3 for Ollama.
+            Number of concurrent LLM requests.  Defaults to configured
+            ``ollama_extraction_workers`` for Ollama.
         """
         from tqdm import tqdm
 
         workers = (
             num_workers
             if num_workers is not None
-            else (self._DEFAULT_OLLAMA_WORKERS if self._provider == LLMProvider.OLLAMA else 1)
+            else (self._default_ollama_workers if self._provider == LLMProvider.OLLAMA else 1)
         )
 
         # --- Load checkpoint ---
