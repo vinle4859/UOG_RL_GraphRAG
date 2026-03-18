@@ -39,6 +39,10 @@ Every benchmark row should include:
 
 This enables quality-cost trade-off analysis and reproducibility.
 
+Implementation note:
+- Efficiency tracking is now configurable in the benchmark CLI.
+- Use `--no-efficiency-tracking` when you want quality-only runs.
+
 ### Tier 3: Small manual golden set (sanity)
 
 - Maintain only a 20–50 question manually labeled set.
@@ -67,4 +71,7 @@ rag-bench benchmark data/eval_questions.json --graphrag-mode local --graphrag-mo
 
 # Enable faithfulness (LLM-as-judge)
 rag-bench benchmark data/eval_questions.json --faithfulness
+
+# Quality-focused run (skip efficiency tracking fields/computation)
+rag-bench benchmark data/eval_questions.json --faithfulness --quality-judges --no-efficiency-tracking
 ```
