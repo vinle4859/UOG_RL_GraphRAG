@@ -144,6 +144,16 @@ def query(question: str, pipeline: str, top_k: int):
 @click.argument("questions_path")
 @click.option("--output", default="results/benchmark_report.csv", help="Output CSV path.")
 @click.option(
+    "--review-csv",
+    default="results/benchmark_review.csv",
+    help="Human-readable benchmark CSV path (question + answer + top-k chunks).",
+)
+@click.option(
+    "--review-md",
+    default="results/benchmark_review.md",
+    help="Human-readable benchmark markdown path.",
+)
+@click.option(
     "--graphrag-mode",
     "graphrag_modes",
     multiple=True,
@@ -152,13 +162,18 @@ def query(question: str, pipeline: str, top_k: int):
 )
 @click.option(
     "--faithfulness/--no-faithfulness",
-    default=False,
+    default=True,
     help="Enable LLM-as-judge faithfulness scoring (slower, extra LLM calls).",
 )
 @click.option(
     "--quality-judges/--no-quality-judges",
-    default=False,
+    default=True,
     help="Enable comprehensiveness and diversity LLM judges (slowest mode).",
+)
+@click.option(
+    "--judge-rationales/--no-judge-rationales",
+    default=True,
+    help="Collect short LLM-judge rationales for human review outputs.",
 )
 @click.option(
     "--jsonl-log/--no-jsonl-log",
@@ -168,9 +183,12 @@ def query(question: str, pipeline: str, top_k: int):
 def benchmark(
     questions_path: str,
     output: str,
+    review_csv: str,
+    review_md: str,
     graphrag_modes: tuple[str, ...],
     faithfulness: bool,
     quality_judges: bool,
+    judge_rationales: bool,
     jsonl_log: bool,
 ):
     """Run side-by-side benchmark evaluation."""
@@ -191,13 +209,38 @@ def benchmark(
         graphrag_modes=modes,
         compute_faithfulness=faithfulness,
         compute_quality_judges=quality_judges,
+        collect_judge_explanations=judge_rationales,
     )
     df = runner.run(questions_path, write_jsonl_log=jsonl_log)
+    review_df = runner.build_human_review_df(df, chunk_limit=5)
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output, index=False)
+    Path(review_csv).parent.mkdir(parents=True, exist_ok=True)
+    review_df.to_csv(review_csv, index=False)
+    runner.write_human_review_markdown(df, review_md, chunk_limit=5)
     click.echo(f"Report saved to {output}")
-    click.echo(df.to_string())
+    click.echo(f"Human review CSV saved to {review_csv}")
+    click.echo(f"Human review markdown saved to {review_md}")
+    click.echo(
+        review_df[
+            [
+                "question_scope",
+                "question",
+                "pipeline",
+                "search_mode",
+                "relevant_hits_at_k",
+                "precision_5",
+                "recall_5",
+                "mrr",
+                "faithfulness",
+                "comprehensiveness",
+                "diversity",
+                "directness",
+                "empowerment",
+            ]
+        ].to_string(index=False)
+    )
 
 
 if __name__ == "__main__":
