@@ -26,7 +26,11 @@ logger = logging.getLogger(__name__)
 RAG_SYSTEM_PROMPT = (
     "You are a helpful research assistant. Use ONLY the provided context "
     "to answer the question. If the context does not contain enough "
-    "information, say so. Cite the source chunk IDs when possible."
+    "information, say so. Always format the answer with these headings: "
+    "Final Answer, Evidence (Chunk IDs), Explainability Notes. Under Evidence, "
+    "cite at least one supporting chunk ID in square brackets when available. "
+    "Under Explainability Notes, briefly state why the evidence supports the "
+    "answer and list any uncertainty or missing context."
 )
 
 RAG_USER_TEMPLATE = """\

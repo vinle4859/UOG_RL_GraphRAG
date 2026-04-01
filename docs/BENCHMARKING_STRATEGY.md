@@ -23,10 +23,12 @@ trade-offs (quality vs latency/cost), while keeping a small manual sanity check.
   - faithfulness (groundedness)
   - comprehensiveness
   - diversity/coverage
+  - directness
+  - empowerment
 
 Current status:
-- Implemented: faithfulness scoring and configurable benchmark modes.
-- Planned: add explicit comprehensiveness/diversity judge prompts.
+- Implemented: all five LLM-judge metrics with rubric-driven prompts.
+- Implemented: optional judge rationale capture for human review.
 
 ### Tier 2: Automated efficiency tracking (primary)
 
@@ -36,6 +38,9 @@ Every benchmark row should include:
 - context size (`context_char_count`, `estimated_context_tokens`)
 - run metadata (`run_id`, `timestamp_utc`)
 - model/provider metadata (`llm_provider`, `llm_model`, embedding settings)
+- retrieval traceability (`retrieved_chunk_ids`, chunk scores, hits@k)
+
+Human-review exports additionally include top-k chunk text + metadata.
 
 This enables quality-cost trade-off analysis and reproducibility.
 
@@ -53,8 +58,9 @@ This verifies retrieval integrity without full manual bottlenecks.
 
 1. Generate or refresh automated question set.
 2. Run benchmark across all pipelines/modes.
-3. Compare quality metrics first, then efficiency metrics.
-4. Run golden-set retrieval sanity check before major releases.
+3. Review `results/benchmark_review.md` for question-by-question evidence.
+4. Compare quality metrics first, then efficiency metrics.
+5. Run golden-set retrieval sanity check before major releases.
 
 ## CLI examples
 
@@ -67,4 +73,15 @@ rag-bench benchmark data/eval_questions.json --graphrag-mode local --graphrag-mo
 
 # Enable faithfulness (LLM-as-judge)
 rag-bench benchmark data/eval_questions.json --faithfulness
+
+# Default run already enables all judge metrics + rationale collection
+rag-bench benchmark data/eval_questions.json
+
+# Fast retrieval-focused run (disable judge calls)
+rag-bench benchmark data/eval_questions.json --no-faithfulness --no-quality-judges
+
+# Outputs written per run
+# - results/benchmark_report.csv
+# - results/benchmark_review.csv
+# - results/benchmark_review.md
 ```
