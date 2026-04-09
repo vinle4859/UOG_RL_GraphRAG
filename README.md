@@ -228,11 +228,17 @@ rag-bench query "What is Proximal Policy Optimization?"
 # Run benchmark
 rag-bench benchmark data/eval_questions.json
 
-# Run benchmark with all LLM judges and JSONL audit log
-rag-bench benchmark data/eval_questions.json --faithfulness --quality-judges
+# Run benchmark (all judge metrics enabled by default)
+rag-bench benchmark data/eval_questions.json
 
-# Run quality-only benchmark (skip efficiency tracking)
-rag-bench benchmark data/eval_questions.json --faithfulness --quality-judges --no-efficiency-tracking
+# Optional: disable judge rationales for faster runs
+rag-bench benchmark data/eval_questions.json --no-judge-rationales
+
+# Fast retrieval-focused run (disable LLM judges)
+rag-bench benchmark data/eval_questions.json --no-faithfulness --no-quality-judges
+
+# Quality-only run with lighter benchmark bookkeeping
+rag-bench benchmark data/eval_questions.json --no-efficiency-tracking
 ```
 
 Performance note:
@@ -296,6 +302,7 @@ The project now follows a **3-tier benchmarking approach**.
       - diversity / coverage
       - directness
       - empowerment
+- Store short rationale text per judge metric for auditability in human review outputs.
 - Run head-to-head comparisons between `rag`, `graphrag_local`, `graphrag_global`,
       `graphrag_graph_only`, and `graphrag_hybrid`.
 
@@ -329,7 +336,17 @@ Why: catches obvious retrieval regressions without the cost of full manual annot
 - Use ROUGE as a secondary/diagnostic metric only.
 - Avoid large-scale manual reference-answer authoring for the whole corpus.
 
-Results are saved to `results/benchmark_report.csv`.
+Results are saved to:
+- `results/benchmark_report.csv` (full machine-oriented benchmark rows)
+- `results/benchmark_review.csv` (human-readable review table)
+- `results/benchmark_review.md` (human-in-the-loop markdown report)
+
+The human review outputs include:
+- question scope (`local` / `global`)
+- pipeline/mode answer text
+- top-k retrieved chunk IDs with scores
+- top-k chunk details including chunk text and metadata
+- judge rationales and validation notes
 
 ### Benchmark CLI Modes
 
@@ -340,8 +357,11 @@ rag-bench benchmark data/eval_questions.json
 # Focus on fair ablation: RAG vs graph-only
 rag-bench benchmark data/eval_questions.json --graphrag-mode graph_only
 
-# Enable all LLM judges
-rag-bench benchmark data/eval_questions.json --faithfulness --quality-judges
+# Disable all judge metrics for a fast retrieval-only run
+rag-bench benchmark data/eval_questions.json --no-faithfulness --no-quality-judges
+
+# Disable rationale collection if latency is a concern
+rag-bench benchmark data/eval_questions.json --no-judge-rationales
 
 # Disable JSONL audit log if needed
 rag-bench benchmark data/eval_questions.json --no-jsonl-log
@@ -357,7 +377,8 @@ rag-bench benchmark data/eval_questions.json --no-jsonl-log
 - [ ] GraphRAG: entity extraction on full corpus
 - [ ] GraphRAG: community detection & summarisation
 - [ ] Automated question generation pipeline (persona/sensemaking prompts)
-- [ ] LLM-judge rubric expansion (faithfulness + comprehensiveness + diversity + directness + empowerment)
+- [x] LLM-judge rubric expansion (faithfulness + comprehensiveness + diversity + directness + empowerment)
+- [x] Human review exports (CSV/Markdown with top-k chunk text + metadata + judge rationales)
 - [ ] Golden-set curation (20–50 precision/recall sanity questions)
 - [ ] Full benchmark run & analysis (quality + efficiency trade-off)
 - [ ] Title clustering / sub-field classification (optional)

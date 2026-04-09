@@ -58,5 +58,23 @@
     "question": "Why is PPO considered simpler than trust region methods?",
     "reference_answer": "PPO provides a simple yet effective approach to policy optimization through its clipping mechanism, which avoids the complexity of computing and enforcing explicit trust region constraints as required by methods like TRPO, while still maintaining stable learning.",
     "relevant_doc_ids": ["2301.00001"]
+  },
+  {
+    "question": "Across the RL papers in this dataset, what shared design goal appears in PPO and DQN, and how do their stability mechanisms differ?",
+    "reference_answer": "Both PPO and DQN target stable policy/value improvement in reinforcement learning. PPO stabilizes updates via a clipped policy-ratio objective in policy-gradient optimization, while DQN stabilizes value learning with experience replay and a target network.",
+    "relevant_doc_ids": ["2301.00001", "2402.00004"],
+    "question_scope": "global"
+  },
+  {
+    "question": "How do Transformer and BERT differ in training objective and downstream use, based on the papers in this corpus?",
+    "reference_answer": "The Transformer paper introduces the encoder-decoder attention architecture for sequence transduction, while BERT uses a bidirectional Transformer encoder pre-trained with Masked Language Modeling and Next Sentence Prediction for transfer to many downstream NLP tasks.",
+    "relevant_doc_ids": ["2301.00002", "2501.00005"],
+    "question_scope": "global"
+  },
+  {
+    "question": "Compare how graph structure is handled in Graph Neural Networks versus sequence structure in Transformer-style models.",
+    "reference_answer": "GNNs model relational structure directly with message passing over graph neighborhoods, while Transformer-style models process token sequences with self-attention over positions. Both aggregate contextual information, but one is native to graphs and the other to sequence representations.",
+    "relevant_doc_ids": ["2402.00003", "2301.00002"],
+    "question_scope": "global"
   }
 ]

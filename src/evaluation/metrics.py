@@ -4,7 +4,7 @@
 # =============================================================================
 """
 Metrics
-=======
+-------
 A collection of evaluation metrics used to compare RAG and GraphRAG outputs.
 
 Retrieval Metrics
@@ -31,8 +31,30 @@ import json
 import logging
 import re
 from collections.abc import Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_judge_payload(raw: str) -> dict[str, Any]:
+    """Parse either JSON judge output or legacy scalar output."""
+    text = (raw or "").strip()
+    if not text:
+        return {"score": 0.0, "rationale": ""}
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        payload = text[start : end + 1]
+        try:
+            obj = json.loads(payload)
+            score = _parse_faithfulness_score(str(obj.get("score", "0")))
+            rationale = str(obj.get("rationale", "")).strip()
+            return {"score": score, "rationale": rationale}
+        except Exception:
+            pass
+
+    return {"score": _parse_faithfulness_score(text), "rationale": ""}
 
 
 def _parse_faithfulness_score(raw: str) -> float:
@@ -136,24 +158,36 @@ You are an impartial judge evaluating whether an answer is faithfully grounded
 in the provided context.  A faithful answer only makes claims that are
 supported by the context — it does not hallucinate or add information.
 
+Scoring rubric:
+- 1.0: Every substantive claim is supported by context.
+- 0.8: Mostly supported with minor unsupported detail.
+- 0.5: Mixed support; notable unsupported or ambiguous claims.
+- 0.2: Mostly unsupported, speculative, or weakly grounded.
+- 0.0: Contradicts context or is unrelated.
+
 Context:
 {context}
 
 Answer:
 {answer}
 
-Rate the faithfulness of the answer on a scale from 0.0 to 1.0:
-- 1.0 = every claim is directly supported by the context
-- 0.5 = some claims are supported, some are not
-- 0.0 = the answer contradicts or is unrelated to the context
-
-Respond with ONLY a single number between 0.0 and 1.0, nothing else.
+Return format requirements:
+- Return ONLY one decimal number between 0.0 and 1.0.
+- Do not return explanation text.
+- Prefer one decimal place using the rubric anchors above.
 """
 
 COMPREHENSIVENESS_PROMPT = """\
 You are an impartial judge evaluating how comprehensive an answer is given a
 question and supporting context.
 
+Scoring rubric:
+- 1.0: Covers nearly all major relevant points in context.
+- 0.8: Covers most major points, minor omissions.
+- 0.5: Covers some points but misses important aspects.
+- 0.2: Covers only a small subset of key points.
+- 0.0: Very incomplete or irrelevant.
+
 Question:
 {question}
 
@@ -163,17 +197,22 @@ Context:
 Answer:
 {answer}
 
-Rate comprehensiveness from 0.0 to 1.0:
-- 1.0 = covers nearly all major relevant points supported by context
-- 0.5 = covers some points but misses important aspects
-- 0.0 = very incomplete or largely irrelevant
-
-Respond with ONLY a single number between 0.0 and 1.0.
+Return format requirements:
+- Return ONLY one decimal number between 0.0 and 1.0.
+- Do not return explanation text.
+- Prefer one decimal place using the rubric anchors above.
 """
 
 DIVERSITY_PROMPT = """\
 You are an impartial judge evaluating informational diversity of an answer.
 
+Scoring rubric:
+- 1.0: Covers multiple distinct relevant facets/perspectives from context.
+- 0.8: Good breadth with minor redundancy.
+- 0.5: Some breadth, but still narrow.
+- 0.2: Mostly single-facet with little variation.
+- 0.0: Repetitive, very narrow, or off-topic.
+
 Question:
 {question}
 
@@ -183,33 +222,43 @@ Context:
 Answer:
 {answer}
 
-Rate diversity from 0.0 to 1.0:
-- 1.0 = answer spans multiple relevant facets/perspectives from context
-- 0.5 = somewhat varied but narrow in scope
-- 0.0 = single-facet, repetitive, or overly narrow
-
-Respond with ONLY a single number between 0.0 and 1.0.
+Return format requirements:
+- Return ONLY one decimal number between 0.0 and 1.0.
+- Do not return explanation text.
+- Prefer one decimal place using the rubric anchors above.
 """
 
 DIRECTNESS_PROMPT = """\
 You are an impartial judge evaluating directness of an answer.
 
+Scoring rubric:
+- 1.0: Directly answers the question with minimal detours.
+- 0.8: Mostly direct with small digressions.
+- 0.5: Partly direct but includes avoidable detours.
+- 0.2: Mostly indirect and weakly targeted.
+- 0.0: Fails to answer what was asked.
+
 Question:
 {question}
 
 Answer:
 {answer}
 
-Rate directness from 0.0 to 1.0:
-- 1.0 = directly answers the question with minimal unnecessary detours
-- 0.5 = partly direct but includes avoidable digressions
-- 0.0 = mostly indirect or fails to answer what was asked
-
-Respond with ONLY a single number between 0.0 and 1.0.
+Return format requirements:
+- Return ONLY one decimal number between 0.0 and 1.0.
+- Do not return explanation text.
+- Prefer one decimal place using the rubric anchors above.
 """
 
 EMPOWERMENT_PROMPT = """\
 You are an impartial judge evaluating empowerment of an answer.
+
+Scoring rubric:
+- 1.0: Enables clear understanding and actionable next steps.
+- 0.8: Useful and mostly actionable.
+- 0.5: Somewhat useful but limited actionability.
+- 0.2: Weak utility or unclear actionability.
+- 0.0: Not useful for decisions or follow-up action.
 
 Question:
 {question}
@@ -220,12 +269,84 @@ Context:
 Answer:
 {answer}
 
-Rate empowerment from 0.0 to 1.0:
-- 1.0 = leaves the user with clear understanding and actionable next steps
-- 0.5 = somewhat useful but lacks clarity/actionability
-- 0.0 = not useful for decision-making or follow-up action
+Return format requirements:
+- Return ONLY one decimal number between 0.0 and 1.0.
+- Do not return explanation text.
+- Prefer one decimal place using the rubric anchors above.
+"""
 
-Respond with ONLY a single number between 0.0 and 1.0.
+FAITHFULNESS_ASSESSMENT_PROMPT = """\
+You are an impartial evaluator. Score the answer for faithfulness to context.
+
+Context:
+{context}
+
+Answer:
+{answer}
+
+Return ONLY valid JSON with this schema:
+{{"score": <0.0-1.0 number>, "rationale": "<=2 concise sentences"}}
+"""
+
+COMPREHENSIVENESS_ASSESSMENT_PROMPT = """\
+You are an impartial evaluator. Score answer comprehensiveness.
+
+Question:
+{question}
+
+Context:
+{context}
+
+Answer:
+{answer}
+
+Return ONLY valid JSON with this schema:
+{{"score": <0.0-1.0 number>, "rationale": "<=2 concise sentences"}}
+"""
+
+DIVERSITY_ASSESSMENT_PROMPT = """\
+You are an impartial evaluator. Score informational diversity.
+
+Question:
+{question}
+
+Context:
+{context}
+
+Answer:
+{answer}
+
+Return ONLY valid JSON with this schema:
+{{"score": <0.0-1.0 number>, "rationale": "<=2 concise sentences"}}
+"""
+
+DIRECTNESS_ASSESSMENT_PROMPT = """\
+You are an impartial evaluator. Score directness.
+
+Question:
+{question}
+
+Answer:
+{answer}
+
+Return ONLY valid JSON with this schema:
+{{"score": <0.0-1.0 number>, "rationale": "<=2 concise sentences"}}
+"""
+
+EMPOWERMENT_ASSESSMENT_PROMPT = """\
+You are an impartial evaluator. Score empowerment/usefulness.
+
+Question:
+{question}
+
+Context:
+{context}
+
+Answer:
+{answer}
+
+Return ONLY valid JSON with this schema:
+{{"score": <0.0-1.0 number>, "rationale": "<=2 concise sentences"}}
 """
 
 
@@ -280,6 +401,48 @@ def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
     except Exception:
         logger.exception("Scalar judge scoring failed — returning 0.0")
         return 0.0
+
+
+def _llm_judge_assessment(prompt: str, model: str | None = None) -> dict[str, Any]:
+    """Run judge prompt and parse score + rationale when available."""
+    from src.config import LLMProvider, get_settings
+
+    settings = get_settings()
+
+    try:
+        if settings.llm_provider == LLMProvider.OLLAMA:
+            import requests
+
+            ollama_model = model or settings.ollama_model
+            resp = requests.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json={"model": ollama_model, "prompt": prompt, "stream": False},
+                timeout=120,
+            )
+            resp.raise_for_status()
+            raw = resp.json()["response"].strip()
+        else:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=settings.openai_api_key)
+            response = client.chat.completions.create(
+                model=model or "gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=120,
+            )
+            raw = (response.choices[0].message.content or "").strip()
+
+        parsed = _parse_judge_payload(raw)
+        return {
+            "score": parsed.get("score", 0.0),
+            "rationale": parsed.get("rationale", ""),
+            "raw": raw,
+        }
+
+    except Exception:
+        logger.exception("Judge assessment failed — returning default score+rationale")
+        return {"score": 0.0, "rationale": "", "raw": ""}
 
 
 def faithfulness_score(
@@ -368,3 +531,67 @@ def empowerment_score(
         context=context,
     )
     return _llm_scalar_score(prompt, model=model)
+
+
+def assess_faithfulness(answer: str, context: str, model: str | None = None) -> dict[str, Any]:
+    """Return faithfulness score with short rationale for human review."""
+    prompt = FAITHFULNESS_ASSESSMENT_PROMPT.format(context=context, answer=answer)
+    return _llm_judge_assessment(prompt, model=model)
+
+
+def assess_comprehensiveness(
+    question: str,
+    answer: str,
+    context: str,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Return comprehensiveness score with short rationale for human review."""
+    prompt = COMPREHENSIVENESS_ASSESSMENT_PROMPT.format(
+        question=question,
+        answer=answer,
+        context=context,
+    )
+    return _llm_judge_assessment(prompt, model=model)
+
+
+def assess_diversity(
+    question: str,
+    answer: str,
+    context: str,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Return diversity score with short rationale for human review."""
+    prompt = DIVERSITY_ASSESSMENT_PROMPT.format(
+        question=question,
+        answer=answer,
+        context=context,
+    )
+    return _llm_judge_assessment(prompt, model=model)
+
+
+def assess_directness(
+    question: str,
+    answer: str,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Return directness score with short rationale for human review."""
+    prompt = DIRECTNESS_ASSESSMENT_PROMPT.format(
+        question=question,
+        answer=answer,
+    )
+    return _llm_judge_assessment(prompt, model=model)
+
+
+def assess_empowerment(
+    question: str,
+    answer: str,
+    context: str,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Return empowerment score with short rationale for human review."""
+    prompt = EMPOWERMENT_ASSESSMENT_PROMPT.format(
+        question=question,
+        answer=answer,
+        context=context,
+    )
+    return _llm_judge_assessment(prompt, model=model)
