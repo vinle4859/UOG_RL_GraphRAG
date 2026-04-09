@@ -108,15 +108,23 @@ class OllamaGenerator(BaseGenerator):
         from src.utils.ollama_client import ollama_post
 
         context_str = "\n\n".join(f"[{c.chunk_id}] {c.text}" for c in context_chunks)
+        settings = get_settings()
         prompt = (
             f"{RAG_SYSTEM_PROMPT}\n\n"
             f"{RAG_USER_TEMPLATE.format(context=context_str, question=query)}"
         )
 
-        settings = get_settings()
         data = ollama_post(
             f"{self.base_url}/api/generate",
-            payload={"model": self.model, "prompt": prompt, "stream": False},
+            payload={
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": settings.ollama_generation_temperature,
+                    "seed": settings.ollama_generation_seed,
+                },
+            },
             read_timeout=settings.ollama_request_timeout,
         )
         return data["response"]
@@ -127,13 +135,16 @@ class OllamaGenerator(BaseGenerator):
 # ---------------------------------------------------------------------------
 
 
-def get_generator(provider: LLMProvider | None = None) -> BaseGenerator:
+def get_generator(
+    provider: LLMProvider | None = None,
+    model: str | None = None,
+) -> BaseGenerator:
     """Create a generator based on configuration."""
     provider = provider or get_settings().llm_provider
 
     if provider == LLMProvider.OPENAI:
-        return OpenAIGenerator()
+        return OpenAIGenerator(model=model)
     elif provider == LLMProvider.OLLAMA:
-        return OllamaGenerator()
+        return OllamaGenerator(model=model)
     else:
         raise NotImplementedError(f"Generator not yet implemented for: {provider}")

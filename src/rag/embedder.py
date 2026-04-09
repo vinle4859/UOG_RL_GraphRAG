@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Abstract Interface
 # ---------------------------------------------------------------------------
+
 
 class BaseEmbedder(ABC):
     """Thin interface that all embedders must implement."""
@@ -56,11 +57,21 @@ class BaseEmbedder(ABC):
 # Concrete Implementations
 # ---------------------------------------------------------------------------
 
+
 class SentenceTransformerEmbedder(BaseEmbedder):
     """Embed with a local Sentence-Transformers model."""
 
     def __init__(self, model_name: str | None = None):
-        from sentence_transformers import SentenceTransformer
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ModuleNotFoundError as exc:
+            if exc.name == "httpx":
+                raise RuntimeError(
+                    "Missing dependency `httpx`, which is required by "
+                    "`sentence-transformers` in this environment. "
+                    "Install it with `pip install httpx` before running indexing or benchmarks."
+                ) from exc
+            raise
 
         self.model_name = model_name or get_settings().embedding_model_name
         logger.info("Loading SentenceTransformer model: %s", self.model_name)
@@ -111,6 +122,7 @@ class OpenAIEmbedder(BaseEmbedder):
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 def get_embedder(provider: EmbeddingProvider | None = None) -> BaseEmbedder:
     """

@@ -62,6 +62,15 @@ def setup_logging(level: str | None = None, log_file: Path | str | None = None) 
         force=True,
     )
     # Quieten noisy third-party loggers
+    logging.getLogger("absl").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("chromadb").setLevel(logging.WARNING)
+    logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
     logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+    logging.getLogger("transformers").setLevel(logging.WARNING)
+
+
+def log_stage(logger: logging.Logger, title: str) -> None:
+    """Emit a readable stage banner for long-running workflows."""
+    line = "=" * 18
+    logger.info("%s %s %s", line, title, line)

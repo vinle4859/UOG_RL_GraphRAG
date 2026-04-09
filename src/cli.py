@@ -23,6 +23,8 @@ Available commands
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
 from src.utils.logging_setup import setup_logging
@@ -309,6 +311,43 @@ def benchmark(
     df.to_csv(output, index=False)
     click.echo(f"Report saved to {output}")
     click.echo(df.to_string())
+
+
+@main.command("graphml-to-artifacts")
+@click.option(
+    "--graph-path",
+    default="data/graphs/knowledge_graph.graphml",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Input GraphML file.",
+)
+@click.option(
+    "--output-dir",
+    default="data/graphs/artifacts",
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Directory where parquet artifacts will be written.",
+)
+@click.option(
+    "--create-final-prefix/--no-create-final-prefix",
+    default=False,
+    help="Write files as create_final_<name>.parquet for legacy naming compatibility.",
+)
+def graphml_to_artifacts(
+    graph_path: str,
+    output_dir: str,
+    create_final_prefix: bool,
+):
+    """Convert knowledge_graph.graphml into GraphRAG visualizer parquet artifacts."""
+    from src.visualization.graphrag_artifacts import graphml_to_graphrag_artifacts
+
+    written = graphml_to_graphrag_artifacts(
+        graph_path=graph_path,
+        output_dir=output_dir,
+        use_create_final_prefix=create_final_prefix,
+    )
+
+    click.echo(f"Wrote {len(written)} artifact files to {Path(output_dir).resolve()}")
+    for name in sorted(written):
+        click.echo(f" - {name}")
 
 
 if __name__ == "__main__":

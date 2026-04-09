@@ -4,26 +4,15 @@
 # =============================================================================
 """
 Graph RAG Pipeline Orchestrator
-================================
+===============================
 Orchestrates the full GraphRAG flow:
 
-1. Load & chunk documents.
-2. Extract entities & relations from each chunk.
+1. Load and chunk documents.
+2. Extract entities and relations from each chunk.
 3. Build the knowledge graph.
-4. Detect communities and generate summaries.
+4. Detect communities and optionally generate summaries.
 5. Index chunks in the vector store (reuse from standard RAG).
-6. At query time, use graph-augmented retrieval + LLM generation.
-
-Example
--------
-::
-
-    from src.graph_rag.pipeline import GraphRAGPipeline
-
-    pipe = GraphRAGPipeline()
-    pipe.build()                            # one-time: full build
-    answer = pipe.query("What is PPO?")     # query time
-    print(answer)
+6. At query time, use graph-augmented retrieval plus LLM generation.
 """
 
 from __future__ import annotations
@@ -38,13 +27,21 @@ from tqdm import tqdm
 
 from src.data.chunker import Chunk, ChunkingPipeline
 from src.data.loader import load_documents
-from src.graph_rag.community import Community, detect_communities_leiden, summarise_community
+from src.graph_rag.community import (
+    Community,
+    default_community_path,
+    detect_communities_leiden,
+    has_community_summaries,
+    load_communities,
+    save_communities,
+    summarise_community,
+)
 from src.graph_rag.entity_extractor import EntityExtractor, ExtractionResult
 from src.graph_rag.graph_builder import KnowledgeGraph
 from src.graph_rag.retriever import GraphRetriever, GraphSearchResult, SearchMode
 from src.rag.embedder import BaseEmbedder, get_embedder
-from src.rag.generator import RAG_USER_TEMPLATE, BaseGenerator, get_generator
-from src.rag.vectorstore import BaseVectorStore, get_vectorstore
+from src.rag.generator import BaseGenerator, get_generator
+from src.rag.vectorstore import BaseVectorStore, SearchResult, get_vectorstore
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +65,7 @@ class GraphRAGPipeline:
     vectorstore : BaseVectorStore, optional
     generator : BaseGenerator, optional
     graph_path : Path, optional
-        Where to save/load the knowledge graph.
+        Where to save and load the knowledge graph.
     """
 
     def __init__(
@@ -78,10 +75,11 @@ class GraphRAGPipeline:
         generator: BaseGenerator | None = None,
         graph_path: Path | str = "data/graphs/knowledge_graph.graphml",
     ):
-        self.embedder = embedder or get_embedder()
-        self.vectorstore = vectorstore or get_vectorstore()
-        self.generator = generator or get_generator()
+        self._embedder = embedder
+        self._vectorstore = vectorstore
+        self.generator = generator
         self.graph_path = Path(graph_path)
+        self.community_path = default_community_path(self.graph_path)
         self._manifest_path = self.graph_path.parent / "indexed_docs.json"
 
         self.chunker = ChunkingPipeline()
@@ -89,6 +87,20 @@ class GraphRAGPipeline:
         self.kg = KnowledgeGraph()
         self.communities: list[Community] = []
         self.retriever: GraphRetriever | None = None
+
+    @property
+    def embedder(self) -> BaseEmbedder:
+        """Lazy-load the shared embedder only when retrieval/indexing needs it."""
+        if self._embedder is None:
+            self._embedder = get_embedder()
+        return self._embedder
+
+    @property
+    def vectorstore(self) -> BaseVectorStore:
+        """Lazy-load the shared vector store only when retrieval/indexing needs it."""
+        if self._vectorstore is None:
+            self._vectorstore = get_vectorstore()
+        return self._vectorstore
 
     # ------------------------------------------------------------------
     # Build phase (offline)
@@ -98,49 +110,49 @@ class GraphRAGPipeline:
         self,
         batch_size: int = 64,
         summarise: bool = True,
+        summary_limit: int | None = None,
         limit: int | None = None,
         resume: bool = False,
         checkpoint_path: Path | str | None = None,
         extraction_workers: int | None = None,
     ) -> None:
         """
-        Run the full build pipeline: chunk → extract → graph → communities
-        → index.
+        Run the full build pipeline: chunk -> extract -> graph -> communities -> index.
 
         Parameters
         ----------
         batch_size : int
             Embedding batch size.
         summarise : bool
-            Whether to generate community summaries (requires LLM calls).
+            Whether to generate community summaries.
+        summary_limit : int, optional
+            Cap the number of communities summarised. Communities are ordered
+            by size descending before the limit is applied.
         limit : int, optional
-            Cap the number of documents processed (useful for quick tests).
+            Cap the number of documents processed.
         resume : bool
             If True, skip documents already recorded in the indexed-docs manifest
             and load extraction results from the checkpoint file.
         checkpoint_path : Path, optional
-            JSONL file for per-chunk extraction checkpointing.  Defaults to
-            ``data/graphs/extraction_checkpoint.jsonl`` when *resume* is True.
+            JSONL file for per-chunk extraction checkpointing. Defaults to
+            ``data/graphs/extraction_checkpoint.jsonl`` when ``resume`` is True.
         extraction_workers : int, optional
             Number of concurrent extraction worker threads for LLM calls.
-            If omitted, provider-specific defaults from settings are used.
         """
-        # Step 1: Load, deduplicate, optionally cap & filter already-indexed docs
         docs = load_documents()
         if not docs:
-            logger.warning("No documents found — aborting build.")
+            logger.warning("No documents found - aborting build.")
             return
 
-        # Deduplicate by doc_id (keeps first occurrence)
         seen: set[str] = set()
-        docs = [d for d in docs if not (d.doc_id in seen or seen.add(d.doc_id))]  # type: ignore[func-returns-value]
+        docs = [doc for doc in docs if not (doc.doc_id in seen or seen.add(doc.doc_id))]  # type: ignore[func-returns-value]
         logger.info("Loaded %d unique documents.", len(docs))
 
         if resume:
             already_indexed = self._load_manifest()
             if already_indexed:
                 before = len(docs)
-                docs = [d for d in docs if d.doc_id not in already_indexed]
+                docs = [doc for doc in docs if doc.doc_id not in already_indexed]
                 logger.info(
                     "Resume: skipping %d already-indexed docs, %d remaining.",
                     before - len(docs),
@@ -157,52 +169,40 @@ class GraphRAGPipeline:
 
         chunks = self.chunker.run(docs)
 
-        # Step 2: Entity extraction (with checkpointing when resume=True)
-        ckpt = None
+        checkpoint = None
         if resume:
-            ckpt = checkpoint_path or self.graph_path.parent / "extraction_checkpoint.jsonl"
+            checkpoint = checkpoint_path or self.graph_path.parent / "extraction_checkpoint.jsonl"
         elif checkpoint_path:
-            ckpt = Path(checkpoint_path)
+            checkpoint = Path(checkpoint_path)
 
-        logger.info("Extracting entities from %d chunks …", len(chunks))
-        extraction_inputs = [(c.chunk_id, c.text) for c in chunks]
+        logger.info("Extracting entities from %d chunks...", len(chunks))
+        extraction_inputs = [(chunk.chunk_id, chunk.text) for chunk in chunks]
         results = self.extractor.extract_batch(
             extraction_inputs,
-            checkpoint_path=ckpt,
+            checkpoint_path=checkpoint,
             num_workers=extraction_workers,
         )
 
-        # Step 3: Build graph
         self.kg.add_extractions(results)
         self.graph_path.parent.mkdir(parents=True, exist_ok=True)
         self.kg.save(self.graph_path)
+        self._refresh_communities_from_graph(
+            summarise=summarise,
+            summary_limit=summary_limit,
+        )
 
-        # Step 4: Community detection
-        self.communities = detect_communities_leiden(self.kg.graph)
-        if summarise:
-            logger.info("Summarising %d communities …", len(self.communities))
-            for comm in tqdm(self.communities, desc="Summarising communities", unit="community"):
-                try:
-                    summarise_community(comm, self.kg.graph)
-                except Exception:
-                    logger.exception("Failed to summarise community %d", comm.community_id)
-
-        # Step 5: Index chunks in vector store
         self._index_chunks(chunks, batch_size)
 
-        # Step 6: Update manifest with newly indexed doc_ids
         indexed = self._load_manifest()
-        indexed.update(d.doc_id for d in docs)
+        indexed.update(doc.doc_id for doc in docs)
         self._save_manifest(indexed)
 
-        # Step 7: Initialise retriever
         self.retriever = GraphRetriever(
             graph=self.kg.graph,
             communities=self.communities,
             embedder=self.embedder,
             vectorstore=self.vectorstore,
         )
-
         logger.info("GraphRAG build complete.")
 
     # ------------------------------------------------------------------
@@ -214,73 +214,53 @@ class GraphRAGPipeline:
         checkpoint_path: Path | str,
         limit: int | None = None,
         summarise: bool = True,
+        summary_limit: int | None = None,
     ) -> None:
-        """Build graph topology from a pre-existing extraction checkpoint JSONL.
-
-        Safe to call while a concurrent extraction job is still appending to the
-        same file — an atomic snapshot copy is taken before reading so there are
-        no I/O lock collisions and no risk of reading a partially-written line
-        from the live file.
-
-        Parameters
-        ----------
-        checkpoint_path :
-            Path to the extraction checkpoint JSONL file.
-        limit :
-            Maximum number of *valid* chunks to load.  Useful for quick partial
-            tests (e.g. ``--limit 1000``).
-        summarise :
-            Whether to run community summarisation (costs extra LLM calls).
-        """
+        """Build graph topology from a pre-existing extraction checkpoint JSONL."""
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-        # --- Step 1: Atomic snapshot to avoid I/O collision -------------------
         snapshot_path = checkpoint_path.with_suffix(".snapshot.jsonl")
-        logger.info("Snapshotting checkpoint → %s", snapshot_path)
+        logger.info("Snapshotting checkpoint -> %s", snapshot_path)
         shutil.copy2(checkpoint_path, snapshot_path)
 
-        # --- Step 2: Read snapshot line-by-line --------------------------------
         good_statuses = {"ok", "fallback_success"}
         loaded = skipped_status = parse_errors = 0
         total_entities = total_relations = 0
         results: list[ExtractionResult] = []
 
         try:
-            with snapshot_path.open(encoding="utf-8") as fh:
-                for lineno, raw_line in enumerate(fh, start=1):
+            with snapshot_path.open(encoding="utf-8") as handle:
+                for lineno, raw_line in enumerate(handle, start=1):
                     raw_line = raw_line.strip()
                     if not raw_line:
                         continue
 
-                    # Tolerate partial writes at EOF (the running extractor may
-                    # have been mid-write when we snapshotted).
                     try:
-                        data = json.loads(raw_line)
+                        payload = json.loads(raw_line)
                     except json.JSONDecodeError as exc:
                         parse_errors += 1
                         logger.warning(
-                            "Line %d: JSON parse error (possibly a partial write from "
-                            "concurrent extractor) — skipping. Detail: %s",
+                            "Line %d: JSON parse error while reading checkpoint snapshot - %s",
                             lineno,
                             exc,
                         )
                         continue
 
-                    status = data.get("status", "ok")
+                    status = payload.get("status", "ok")
                     if status not in good_statuses:
                         skipped_status += 1
                         continue
 
                     try:
-                        result = EntityExtractor._deserialize(data)
+                        result = EntityExtractor._deserialize(payload)
                     except Exception as exc:
                         parse_errors += 1
                         logger.warning(
-                            "Line %d (chunk_id=%r): deserialization failed — skipping. %s",
+                            "Line %d (chunk_id=%r): deserialization failed - %s",
                             lineno,
-                            data.get("chunk_id", "?"),
+                            payload.get("chunk_id", "?"),
                             exc,
                         )
                         continue
@@ -291,7 +271,7 @@ class GraphRAGPipeline:
                     loaded += 1
 
                     if limit is not None and loaded >= limit:
-                        logger.info("Limit of %d chunks reached — stopping read.", limit)
+                        logger.info("Limit of %d chunks reached - stopping read.", limit)
                         break
         finally:
             snapshot_path.unlink(missing_ok=True)
@@ -310,53 +290,40 @@ class GraphRAGPipeline:
         )
 
         if not results:
-            logger.warning("No valid extraction results found — graph will be empty.")
+            logger.warning("No valid extraction results found - graph will be empty.")
 
-        # --- Step 3: Build graph -----------------------------------------------
-        logger.info("Building graph from %d extraction results …", len(results))
+        logger.info("Building graph from %d extraction results...", len(results))
         self.kg.add_extractions(results)
         self.graph_path.parent.mkdir(parents=True, exist_ok=True)
         self.kg.save(self.graph_path)
         logger.info(
-            "Graph saved → %s  (%d nodes, %d edges).",
+            "Graph saved -> %s (%d nodes, %d edges).",
             self.graph_path,
             self.kg.graph.number_of_nodes(),
             self.kg.graph.number_of_edges(),
         )
 
-        # --- Step 4: Community detection ---------------------------------------
-        self.communities = detect_communities_leiden(self.kg.graph)
-        logger.info("Detected %d communities.", len(self.communities))
-
-        if summarise:
-            logger.info("Summarising %d communities …", len(self.communities))
-            for comm in tqdm(self.communities, desc="Summarising communities", unit="community"):
-                try:
-                    summarise_community(comm, self.kg.graph)
-                except Exception:
-                    logger.exception("Failed to summarise community %d", comm.community_id)
-        else:
-            logger.info("Community summarisation skipped (--no-summarise).")
-
-        # --- Step 5: Initialise retriever -------------------------------------
+        self._refresh_communities_from_graph(
+            summarise=summarise,
+            summary_limit=summary_limit,
+        )
         self.retriever = GraphRetriever(
             graph=self.kg.graph,
             communities=self.communities,
             embedder=self.embedder,
             vectorstore=self.vectorstore,
         )
-
-        logger.info("build-topology complete — graph ready for querying.")
+        logger.info("build-topology complete - graph ready for querying.")
 
     def _index_chunks(self, chunks: list[Chunk], batch_size: int) -> None:
         """Embed and index chunks in the vector store."""
-        logger.info("Indexing %d chunks …", len(chunks))
+        logger.info("Indexing %d chunks...", len(chunks))
         batches = range(0, len(chunks), batch_size)
-        for i in tqdm(batches, desc="Indexing chunks", unit="batch"):
-            batch = chunks[i : i + batch_size]
-            ids = [c.chunk_id for c in batch]
-            texts = [c.text for c in batch]
-            metadatas = [{"doc_id": c.doc_id, "index": c.index} for c in batch]
+        for start in tqdm(batches, desc="Indexing chunks", unit="batch"):
+            batch = chunks[start : start + batch_size]
+            ids = [chunk.chunk_id for chunk in batch]
+            texts = [chunk.text for chunk in batch]
+            metadatas = [{"doc_id": chunk.doc_id, "index": chunk.index} for chunk in batch]
             embeddings = self.embedder.embed(texts)
             self.vectorstore.add(ids, texts, embeddings, metadatas)
 
@@ -378,15 +345,79 @@ class GraphRAGPipeline:
         self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
         self._manifest_path.write_text(json.dumps(sorted(doc_ids), indent=2), encoding="utf-8")
 
+    def _refresh_communities_from_graph(
+        self,
+        *,
+        summarise: bool,
+        summary_limit: int | None = None,
+        summary_model: str | None = None,
+    ) -> None:
+        """Detect, optionally summarise, and persist communities for the loaded graph."""
+        self.communities = detect_communities_leiden(self.kg.graph)
+        logger.info("Detected %d communities.", len(self.communities))
+
+        if summarise:
+            ordered = sorted(
+                self.communities, key=lambda community: len(community.nodes), reverse=True
+            )
+            selected = ordered[:summary_limit] if summary_limit is not None else ordered
+            logger.info(
+                "Summarising %d communities%s...",
+                len(selected),
+                f" (limit={summary_limit})" if summary_limit is not None else "",
+            )
+            for community in tqdm(selected, desc="Summarising communities", unit="community"):
+                try:
+                    summarise_community(
+                        community,
+                        self.kg.graph,
+                        model=summary_model or "gpt-4o-mini",
+                    )
+                except Exception:
+                    logger.exception("Failed to summarise community %d", community.community_id)
+        else:
+            logger.info("Community summarisation skipped.")
+
+        save_communities(self.communities, self.community_path, graph_path=self.graph_path)
+
     # ------------------------------------------------------------------
     # Query phase (online)
     # ------------------------------------------------------------------
 
-    def load_graph(self) -> None:
+    def refresh_communities(
+        self,
+        *,
+        summarise: bool = True,
+        summary_limit: int | None = None,
+        summary_model: str | None = None,
+    ) -> None:
+        """Refresh the community sidecar from an existing graph."""
+        self.kg.load(self.graph_path)
+        self._refresh_communities_from_graph(
+            summarise=summarise,
+            summary_limit=summary_limit,
+            summary_model=summary_model,
+        )
+        self.retriever = None
+
+    def load_graph(self, *, require_summaries: bool = False) -> None:
         """Load a previously built graph and initialise the retriever."""
         self.kg.load(self.graph_path)
-        # Re-detect communities from the loaded graph
-        self.communities = detect_communities_leiden(self.kg.graph)
+        if self.community_path.exists():
+            self.communities = load_communities(self.community_path)
+        else:
+            logger.warning(
+                "Community sidecar missing at %s - re-detecting communities from GraphML.",
+                self.community_path,
+            )
+            self.communities = detect_communities_leiden(self.kg.graph)
+
+        if require_summaries and not has_community_summaries(self.communities):
+            raise RuntimeError(
+                "Community summaries are required for global or hybrid GraphRAG modes. "
+                "Run `rag-bench refresh-communities --summarise` first."
+            )
+
         self.retriever = GraphRetriever(
             graph=self.kg.graph,
             communities=self.communities,
@@ -408,38 +439,39 @@ class GraphRAGPipeline:
         question : str
             User's question.
         mode : SearchMode
-            "local", "global", or "hybrid".
+            Retrieval mode.
         top_k : int, optional
             Number of chunks for local search.
-
-        Returns
-        -------
-        GraphRAGResult
         """
         if self.retriever is None:
-            raise RuntimeError("Call build() or load_graph() before querying.")
+            raise RuntimeError(
+                "Call build(), refresh_communities(), or load_graph() before querying."
+            )
 
         search_result = self.retriever.retrieve(question, mode=mode, top_k=top_k)
+        generation_chunks: list[SearchResult] = list(search_result.chunk_results)
 
-        # Assemble context for the LLM
-        context_parts: list[str] = []
+        if search_result.graph_context.strip():
+            generation_chunks.append(
+                SearchResult(
+                    chunk_id="graph_context",
+                    text=search_result.graph_context,
+                    score=0.0,
+                    metadata={"source": "graph_relations"},
+                )
+            )
 
-        # From vector search chunks
-        for c in search_result.chunk_results:
-            context_parts.append(f"[{c.chunk_id}] {c.text}")
+        for idx, summary in enumerate(search_result.community_summaries, start=1):
+            if summary.strip():
+                generation_chunks.append(
+                    SearchResult(
+                        chunk_id=f"community_summary_{idx}",
+                        text=summary,
+                        score=0.0,
+                        metadata={"source": "community_summary", "index": idx},
+                    )
+                )
 
-        # From graph structure
-        if search_result.graph_context:
-            context_parts.append(f"\n--- Graph Relations ---\n{search_result.graph_context}")
-
-        # From community summaries
-        for i, summary in enumerate(search_result.community_summaries):
-            context_parts.append(f"\n--- Community {i + 1} Summary ---\n{summary}")
-
-        context_str = "\n\n".join(context_parts)
-        user_msg = RAG_USER_TEMPLATE.format(context=context_str, question=question)
-
-        # Generate answer via the configured generator (OpenAI / Ollama / etc.)
-        answer = self.generator.generate(user_msg, search_result.chunk_results)
-
+        self.generator = self.generator or get_generator()
+        answer = self.generator.generate(question, generation_chunks)
         return GraphRAGResult(answer=answer, query=question, search_result=search_result)

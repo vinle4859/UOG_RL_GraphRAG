@@ -108,10 +108,36 @@ class Settings(BaseSettings):
     ollama_request_timeout: int = Field(
         default=300, description="HTTP read timeout (seconds) for Ollama generate requests"
     )
+    ollama_generation_temperature: float = Field(
+        default=0.0,
+        description="Sampling temperature for Ollama answer generation during benchmark/query runs",
+    )
+    ollama_generation_seed: int = Field(
+        default=42,
+        description="Deterministic seed for Ollama answer generation during benchmark/query runs",
+    )
+    ollama_judge_temperature: float = Field(
+        default=0.0,
+        description="Sampling temperature for Ollama scalar judge prompts",
+    )
+    ollama_judge_seed: int = Field(
+        default=42,
+        description="Deterministic seed for Ollama scalar judge prompts",
+    )
+    ollama_judge_num_predict: int = Field(
+        default=16,
+        ge=1,
+        description="Maximum generated tokens for Ollama scalar judge prompts",
+    )
     ollama_extraction_workers: int = Field(
         default=1,
         ge=1,
         description="Concurrent worker threads for GraphRAG entity extraction with Ollama",
+    )
+    benchmark_judge_workers: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum concurrent worker threads for LLM-as-judge scoring within one benchmark record",
     )
 
     # --- API Retry / Rate-limit handling ---

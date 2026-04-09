@@ -88,6 +88,7 @@ class EvalRecord:
     embedding_model: str = ""
     top_k: int = 5
     answer: str = ""
+    retrieved_chunks: list[dict[str, object]] = field(default_factory=list)
     latency_s: float = 0.0
     precision_5: float = 0.0
     recall_5: float = 0.0
@@ -275,6 +276,20 @@ class BenchmarkRunner:
             "embedding_model": embedding_model,
         }
 
+    def _serialize_chunks(self, chunks) -> list[dict[str, object]]:
+        """Convert retrieval results into JSON-serializable benchmark payloads."""
+        serialized_chunks: list[dict[str, object]] = []
+        for chunk in chunks or []:
+            serialized_chunks.append(
+                {
+                    "chunk_id": getattr(chunk, "chunk_id", ""),
+                    "text": getattr(chunk, "text", ""),
+                    "score": getattr(chunk, "score", 0.0),
+                    "metadata": getattr(chunk, "metadata", None),
+                }
+            )
+        return serialized_chunks
+
     # ------------------------------------------------------------------
     # Private evaluation helpers
     # ------------------------------------------------------------------
@@ -313,6 +328,7 @@ class BenchmarkRunner:
             embedding_model=meta["embedding_model"],
             top_k=top_k,
             answer=result.answer,
+            retrieved_chunks=self._serialize_chunks(result.retrieved_chunks),
             latency_s=latency,
             precision_5=precision_at_k(retrieved_ids, relevant, top_k),
             recall_5=recall_at_k(retrieved_ids, relevant, top_k),
@@ -396,6 +412,7 @@ class BenchmarkRunner:
             embedding_model=meta["embedding_model"],
             top_k=top_k,
             answer=result.answer,
+            retrieved_chunks=self._serialize_chunks(chunk_results),
             latency_s=latency,
             precision_5=precision_at_k(retrieved_ids, relevant, top_k),
             recall_5=recall_at_k(retrieved_ids, relevant, top_k),

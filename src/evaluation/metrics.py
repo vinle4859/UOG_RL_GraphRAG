@@ -27,6 +27,7 @@ notebooks and scripts.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Sequence
@@ -41,6 +42,22 @@ def _parse_faithfulness_score(raw: str) -> float:
         return 0.0
     score = float(match.group(1))
     return max(0.0, min(1.0, score))
+
+
+def _parse_scalar_judge_response(raw: str) -> float:
+    """Parse a scalar judge response from JSON or free-form text."""
+    text = raw.strip()
+    if not text:
+        return 0.0
+
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict) and "score" in payload:
+            return max(0.0, min(1.0, float(payload["score"])))
+    except Exception:
+        pass
+
+    return _parse_faithfulness_score(text)
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +242,20 @@ def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
             ollama_model = model or settings.ollama_model
             data = ollama_post(
                 f"{settings.ollama_base_url}/api/generate",
-                payload={"model": ollama_model, "prompt": prompt, "stream": False},
+                payload={
+                    "model": ollama_model,
+                    "prompt": (
+                        f"{prompt}\n\n"
+                        'Return ONLY valid JSON with a single key: {"score": <number between 0.0 and 1.0>}.'
+                    ),
+                    "stream": False,
+                    "format": "json",
+                    "options": {
+                        "temperature": settings.ollama_judge_temperature,
+                        "seed": settings.ollama_judge_seed,
+                        "num_predict": settings.ollama_judge_num_predict,
+                    },
+                },
                 read_timeout=settings.ollama_request_timeout,
             )
             raw = data["response"].strip()
@@ -241,8 +271,8 @@ def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
             )
             raw = response.choices[0].message.content.strip()
 
-        score = _parse_faithfulness_score(raw)
-        if score > 0.0 or raw.strip().startswith("0"):
+        score = _parse_scalar_judge_response(raw)
+        if score > 0.0 or raw.strip().startswith(("0", "{")):
             return score
         logger.warning("Could not parse scalar judge score from: %s", raw)
         return 0.0
