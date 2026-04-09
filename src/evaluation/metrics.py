@@ -4,7 +4,7 @@
 # =============================================================================
 """
 Metrics
-=======
+-------
 A collection of evaluation metrics used to compare RAG and GraphRAG outputs.
 
 Retrieval Metrics
@@ -27,10 +27,11 @@ notebooks and scripts.
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import re
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +66,26 @@ def _parse_faithfulness_score(raw: str) -> float:
     return max(0.0, min(1.0, score))
 
 
+def _parse_scalar_judge_response(raw: str) -> float:
+    """Parse a scalar judge response from JSON or free-form text."""
+    text = raw.strip()
+    if not text:
+        return 0.0
+
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict) and "score" in payload:
+            return max(0.0, min(1.0, float(payload["score"])))
+    except Exception:
+        pass
+
+    return _parse_faithfulness_score(text)
+
+
 # ---------------------------------------------------------------------------
 # Retrieval Metrics
 # ---------------------------------------------------------------------------
+
 
 def precision_at_k(retrieved_ids: Sequence[str], relevant_ids: set[str], k: int) -> float:
     """
@@ -114,6 +132,7 @@ def mean_reciprocal_rank(retrieved_ids: Sequence[str], relevant_ids: set[str]) -
 # ---------------------------------------------------------------------------
 # Generation Metrics
 # ---------------------------------------------------------------------------
+
 
 def rouge_scores(prediction: str, reference: str) -> dict[str, float]:
     """
@@ -339,16 +358,28 @@ def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
 
     try:
         if settings.llm_provider == LLMProvider.OLLAMA:
-            import requests
+            from src.utils.ollama_client import ollama_post
 
             ollama_model = model or settings.ollama_model
-            resp = requests.post(
+            data = ollama_post(
                 f"{settings.ollama_base_url}/api/generate",
-                json={"model": ollama_model, "prompt": prompt, "stream": False},
-                timeout=120,
+                payload={
+                    "model": ollama_model,
+                    "prompt": (
+                        f"{prompt}\n\n"
+                        'Return ONLY valid JSON with a single key: {"score": <number between 0.0 and 1.0>}.'
+                    ),
+                    "stream": False,
+                    "format": "json",
+                    "options": {
+                        "temperature": settings.ollama_judge_temperature,
+                        "seed": settings.ollama_judge_seed,
+                        "num_predict": settings.ollama_judge_num_predict,
+                    },
+                },
+                read_timeout=settings.ollama_request_timeout,
             )
-            resp.raise_for_status()
-            raw = resp.json()["response"].strip()
+            raw = data["response"].strip()
         else:
             from openai import OpenAI
 
@@ -361,8 +392,8 @@ def _llm_scalar_score(prompt: str, model: str | None = None) -> float:
             )
             raw = response.choices[0].message.content.strip()
 
-        score = _parse_faithfulness_score(raw)
-        if score > 0.0 or raw.strip().startswith("0"):
+        score = _parse_scalar_judge_response(raw)
+        if score > 0.0 or raw.strip().startswith(("0", "{")):
             return score
         logger.warning("Could not parse scalar judge score from: %s", raw)
         return 0.0

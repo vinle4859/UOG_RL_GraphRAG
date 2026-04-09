@@ -20,16 +20,16 @@ Run with::
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-from src.data.loader import Document, load_documents, search_by_title, search_by_metadata
 from src.data.chunker import TokenChunker
+from src.data.loader import Document, load_documents, search_by_metadata, search_by_title
 from src.rag.vectorstore import SearchResult
 
+pytest.importorskip("httpx")
+pytest.importorskip("sentence_transformers")
 
 # ---------------------------------------------------------------------------
 # Sample Data — 5 fake ArXiv papers with realistic structure
@@ -192,6 +192,7 @@ FAKE_PAPERS = [
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def paper_dir(tmp_path: Path) -> Path:
     """Write fake papers as JSON files to a temporary directory."""
@@ -210,6 +211,7 @@ def documents(paper_dir: Path) -> list[Document]:
 # ---------------------------------------------------------------------------
 # Tests — Data Loading
 # ---------------------------------------------------------------------------
+
 
 class TestDocumentLoading:
     """Verify that structured JSON files are loaded correctly."""
@@ -235,6 +237,7 @@ class TestDocumentLoading:
 # ---------------------------------------------------------------------------
 # Tests — Title & Metadata Search
 # ---------------------------------------------------------------------------
+
 
 class TestSearch:
     """Verify title and metadata search."""
@@ -276,6 +279,7 @@ class TestSearch:
 # Tests — Chunking
 # ---------------------------------------------------------------------------
 
+
 class TestChunking:
     """Verify chunking preserves title metadata."""
 
@@ -303,6 +307,7 @@ class TestChunking:
 # Tests — RAG Pipeline (embedding + retrieval, NO LLM calls)
 # ---------------------------------------------------------------------------
 
+
 class TestRAGRetrieval:
     """
     Test the RAG retrieval pipeline end-to-end using a real local
@@ -314,8 +319,8 @@ class TestRAGRetrieval:
     def test_index_and_retrieve(self, documents):
         """Index 5 papers and verify retrieval returns relevant chunks."""
         from src.rag.embedder import SentenceTransformerEmbedder
-        from src.rag.vectorstore import FAISSVectorStore
         from src.rag.retriever import Retriever
+        from src.rag.vectorstore import FAISSVectorStore
 
         # Use real local embedder + in-memory FAISS (no files, no API keys)
         embedder = SentenceTransformerEmbedder(model_name="all-MiniLM-L6-v2")
@@ -344,15 +349,15 @@ class TestRAGRetrieval:
         # Check that RL-related papers rank high
         retrieved_doc_ids = {r.chunk_id.split("__")[0] for r in results}
         rl_papers = {"2301.00001", "2402.00004"}  # PPO + DQN
-        assert retrieved_doc_ids & rl_papers, (
-            f"Expected RL papers in results, got: {retrieved_doc_ids}"
-        )
+        assert (
+            retrieved_doc_ids & rl_papers
+        ), f"Expected RL papers in results, got: {retrieved_doc_ids}"
 
     def test_retrieve_transformer_query(self, documents):
         """Query about transformers should retrieve attention/BERT papers."""
         from src.rag.embedder import SentenceTransformerEmbedder
-        from src.rag.vectorstore import FAISSVectorStore
         from src.rag.retriever import Retriever
+        from src.rag.vectorstore import FAISSVectorStore
 
         embedder = SentenceTransformerEmbedder(model_name="all-MiniLM-L6-v2")
         store = FAISSVectorStore()
@@ -371,15 +376,15 @@ class TestRAGRetrieval:
 
         retrieved_doc_ids = {r.chunk_id.split("__")[0] for r in results}
         transformer_papers = {"2301.00002", "2501.00005"}  # Attention + BERT
-        assert retrieved_doc_ids & transformer_papers, (
-            f"Expected Transformer papers in results, got: {retrieved_doc_ids}"
-        )
+        assert (
+            retrieved_doc_ids & transformer_papers
+        ), f"Expected Transformer papers in results, got: {retrieved_doc_ids}"
 
     def test_retrieve_gnn_query(self, documents):
         """Query about GNNs should retrieve the graph paper."""
         from src.rag.embedder import SentenceTransformerEmbedder
-        from src.rag.vectorstore import FAISSVectorStore
         from src.rag.retriever import Retriever
+        from src.rag.vectorstore import FAISSVectorStore
 
         embedder = SentenceTransformerEmbedder(model_name="all-MiniLM-L6-v2")
         store = FAISSVectorStore()
@@ -493,8 +498,8 @@ class TestTxtRAGRetrieval:
 
     def test_txt_index_and_retrieve(self, txt_documents):
         from src.rag.embedder import SentenceTransformerEmbedder
-        from src.rag.vectorstore import FAISSVectorStore
         from src.rag.retriever import Retriever
+        from src.rag.vectorstore import FAISSVectorStore
 
         embedder = SentenceTransformerEmbedder(model_name="all-MiniLM-L6-v2")
         store = FAISSVectorStore()

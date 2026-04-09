@@ -44,6 +44,10 @@ Human-review exports additionally include top-k chunk text + metadata.
 
 This enables quality-cost trade-off analysis and reproducibility.
 
+Implementation note:
+- Efficiency tracking is now configurable in the benchmark CLI.
+- Use `--no-efficiency-tracking` when you want quality-only runs.
+
 ### Tier 3: Small manual golden set (sanity)
 
 - Maintain only a 20–50 question manually labeled set.
@@ -79,6 +83,9 @@ rag-bench benchmark data/eval_questions.json
 
 # Fast retrieval-focused run (disable judge calls)
 rag-bench benchmark data/eval_questions.json --no-faithfulness --no-quality-judges
+
+# Quality-focused run with lighter benchmark bookkeeping
+rag-bench benchmark data/eval_questions.json --no-efficiency-tracking
 
 # Outputs written per run
 # - results/benchmark_report.csv

@@ -54,7 +54,7 @@ This repository implements a comparative benchmarking framework to evaluate a cu
               ┌─────▼─────┐                                   ┌────────▼───────┐           │
               │ Standard  │                                   │ Knowledge Graph│           │
               │ RAG       │                                   │ (NetworkX)     │           │
-              │ Retriever │                                   └────────┬───────┘           │ 
+              │ Retriever │                                   └────────┬───────┘           │
               └─────┬─────┘                                            │                   │
                     │                                         ┌────────▼───────┐           │
                     │                                         │ Community Det. │           │
@@ -219,6 +219,9 @@ rag-bench index
 # Build GraphRAG (entity extraction + graph + communities)
 rag-bench build-graph
 
+# Build GraphRAG with higher extraction concurrency (for local Ollama)
+rag-bench build-graph --resume --extract-workers 2
+
 # Ask a question
 rag-bench query "What is Proximal Policy Optimization?"
 
@@ -230,7 +233,19 @@ rag-bench benchmark data/eval_questions.json
 
 # Optional: disable judge rationales for faster runs
 rag-bench benchmark data/eval_questions.json --no-judge-rationales
+
+# Fast retrieval-focused run (disable LLM judges)
+rag-bench benchmark data/eval_questions.json --no-faithfulness --no-quality-judges
+
+# Quality-only run with lighter benchmark bookkeeping
+rag-bench benchmark data/eval_questions.json --no-efficiency-tracking
 ```
+
+Performance note:
+- `Leiden` community detection is CPU-bound and does not use GPU.
+- GPU usage mainly comes from local LLM inference (for extraction/generation) and can appear low
+      if extraction is running with a single worker.
+- Use `--extract-workers` (or `OLLAMA_EXTRACTION_WORKERS` in `.env`) to tune throughput.
 
 ---
 

@@ -31,8 +31,12 @@ TODO
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 import networkx as nx
 
@@ -42,6 +46,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Data Model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Community:
@@ -61,16 +66,89 @@ class Community:
     metadata : dict
         Extra info (modularity contribution, size, etc.).
     """
+
     community_id: int
     nodes: list[str] = field(default_factory=list)
     summary: str = ""
     level: int = 0
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def default_community_path(graph_path: Path | str) -> Path:
+    """Return the default JSON sidecar path for a GraphML file."""
+    return Path(graph_path).with_suffix(".communities.json")
+
+
+def community_to_dict(community: Community) -> dict[str, Any]:
+    """Serialize a Community to a JSON-compatible dict."""
+    metadata = dict(community.metadata)
+    metadata.setdefault("size", len(community.nodes))
+    return {
+        "community_id": community.community_id,
+        "nodes": sorted(set(community.nodes)),
+        "summary": community.summary,
+        "level": community.level,
+        "size": len(community.nodes),
+        "metadata": metadata,
+    }
+
+
+def community_from_dict(payload: dict[str, Any]) -> Community:
+    """Deserialize a Community from a JSON payload."""
+    nodes = [str(node) for node in payload.get("nodes", [])]
+    metadata = dict(payload.get("metadata") or {})
+    metadata.setdefault("size", len(nodes))
+    return Community(
+        community_id=int(payload.get("community_id", 0)),
+        nodes=nodes,
+        summary=str(payload.get("summary", "") or ""),
+        level=int(payload.get("level", 0)),
+        metadata=metadata,
+    )
+
+
+def save_communities(
+    communities: list[Community],
+    path: Path | str,
+    *,
+    graph_path: Path | str | None = None,
+) -> Path:
+    """Persist detected communities to a JSON sidecar."""
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "graph_path": str(graph_path) if graph_path is not None else "",
+        "community_count": len(communities),
+        "communities": [community_to_dict(community) for community in communities],
+    }
+    output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("Community sidecar saved to %s (%d communities).", output_path, len(communities))
+    return output_path
+
+
+def load_communities(path: Path | str) -> list[Community]:
+    """Load community metadata from a JSON sidecar."""
+    input_path = Path(path)
+    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    communities = [
+        community_from_dict(item)
+        for item in payload.get("communities", [])
+        if isinstance(item, dict)
+    ]
+    logger.info("Loaded %d communities from %s.", len(communities), input_path)
+    return communities
+
+
+def has_community_summaries(communities: list[Community]) -> bool:
+    """Return True when at least one community summary is populated."""
+    return any(community.summary.strip() for community in communities)
 
 
 # ---------------------------------------------------------------------------
 # Detection
 # ---------------------------------------------------------------------------
+
 
 def detect_communities_leiden(
     graph: nx.Graph | nx.DiGraph,
@@ -141,8 +219,7 @@ def detect_communities_louvain(graph: nx.Graph | nx.DiGraph) -> list[Community]:
 
     partition = louvain_communities(undirected, seed=42)
     communities = [
-        Community(community_id=cid, nodes=list(members))
-        for cid, members in enumerate(partition)
+        Community(community_id=cid, nodes=list(members)) for cid, members in enumerate(partition)
     ]
     logger.info("Louvain detected %d communities.", len(communities))
     return communities
@@ -151,6 +228,7 @@ def detect_communities_louvain(graph: nx.Graph | nx.DiGraph) -> list[Community]:
 # ---------------------------------------------------------------------------
 # Summarisation
 # ---------------------------------------------------------------------------
+
 
 def summarise_community(
     community: Community,
@@ -205,16 +283,15 @@ def summarise_community(
     settings = get_settings()
 
     if settings.llm_provider == LLMProvider.OLLAMA:
-        import requests
+        from src.utils.ollama_client import ollama_post
 
         ollama_model = model if model != "gpt-4o-mini" else settings.ollama_model
-        resp = requests.post(
+        data = ollama_post(
             f"{settings.ollama_base_url}/api/generate",
-            json={"model": ollama_model, "prompt": prompt, "stream": False},
-            timeout=180,
+            payload={"model": ollama_model, "prompt": prompt, "stream": False},
+            read_timeout=settings.ollama_request_timeout,
         )
-        resp.raise_for_status()
-        summary = resp.json()["response"].strip()
+        summary = data["response"].strip()
     else:
         from openai import OpenAI
 

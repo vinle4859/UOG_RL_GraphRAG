@@ -39,8 +39,8 @@ from src.evaluation.metrics import (
     assess_empowerment,
     assess_faithfulness,
     comprehensiveness_score,
-    diversity_score,
     directness_score,
+    diversity_score,
     empowerment_score,
     faithfulness_score,
     mean_reciprocal_rank,
@@ -89,7 +89,7 @@ def _normalise_question_scope(raw_scope: Any) -> str:
     return "local"
 
 
-def _question_from_payload(item: dict[str, Any]) -> "EvalQuestion":
+def _question_from_payload(item: dict[str, Any]) -> EvalQuestion:
     """Build EvalQuestion with backwards-compatible parsing."""
     if not isinstance(item, dict):
         raise ValueError("Each eval question must be a JSON object.")
@@ -117,7 +117,7 @@ def _safe_metric(value: float, metric_name: str) -> float:
     return min(1.0, max(0.0, float(value)))
 
 
-def _validate_record(rec: "EvalRecord") -> "EvalRecord":
+def _validate_record(rec: EvalRecord) -> EvalRecord:
     """Validate and normalise benchmark record fields before persistence."""
     rec.question_scope = _normalise_question_scope(rec.question_scope)
     rec.top_k = max(1, int(rec.top_k))
@@ -167,7 +167,9 @@ def _format_chunk_pairs(chunk_ids: list[str], scores: list[Any], limit: int = 5)
     return "\n".join(out)
 
 
-def _build_chunk_payload(chunk_results: list[Any], limit: int | None = None) -> list[dict[str, Any]]:
+def _build_chunk_payload(
+    chunk_results: list[Any], limit: int | None = None
+) -> list[dict[str, Any]]:
     """Serialise retrieved chunks for downstream human review."""
     payload: list[dict[str, Any]] = []
     items = chunk_results if limit is None else chunk_results[:limit]
@@ -209,9 +211,11 @@ def _format_chunk_details(payload: list[dict[str, Any]], text_limit: int = _RAG_
 # Data Models
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class EvalQuestion:
     """A single evaluation question with optional ground truth."""
+
     question: str
     reference_answer: str = ""
     relevant_doc_ids: list[str] = field(default_factory=list)
@@ -221,6 +225,7 @@ class EvalQuestion:
 @dataclass
 class EvalRecord:
     """Metrics for one question + one pipeline."""
+
     question: str
     pipeline: str  # "rag", "graphrag_local", "graphrag_global", "graphrag_graph_only", etc.
     question_scope: str = "local"
@@ -233,12 +238,13 @@ class EvalRecord:
     embedding_model: str = ""
     top_k: int = 5
     answer: str = ""
+    retrieved_chunks: list[dict[str, object]] = field(default_factory=list)
     latency_s: float = 0.0
     precision_5: float = 0.0
     recall_5: float = 0.0
     mrr: float = 0.0
     rouge1: float = 0.0
-    rougeL: float = 0.0
+    rougeL: float = 0.0  # noqa: N815 - kept for backward-compatible report schema
     faithfulness: float = 0.0
     comprehensiveness: float = 0.0
     diversity: float = 0.0
@@ -268,6 +274,7 @@ class EvalRecord:
 # Runner
 # ---------------------------------------------------------------------------
 
+
 class BenchmarkRunner:
     """
     Orchestrates side-by-side evaluation.
@@ -292,6 +299,8 @@ class BenchmarkRunner:
     compute_quality_judges : bool
         Whether to run additional LLM judges: comprehensiveness,
         diversity, directness, and empowerment.
+    compute_efficiency_tracking : bool
+        Whether to compute efficiency metrics (latency/context size/token estimate).
     """
 
     def __init__(
@@ -301,6 +310,7 @@ class BenchmarkRunner:
         graphrag_modes: list[str] | None = None,
         compute_faithfulness: bool = True,
         compute_quality_judges: bool = True,
+        compute_efficiency_tracking: bool = True,
         collect_judge_explanations: bool = True,
     ):
         self.rag = rag_pipeline
@@ -308,6 +318,7 @@ class BenchmarkRunner:
         self.graphrag_modes = graphrag_modes or ["local", "global", "graph_only", "hybrid"]
         self.compute_faithfulness = compute_faithfulness
         self.compute_quality_judges = compute_quality_judges
+        self.compute_efficiency_tracking = compute_efficiency_tracking
         self.collect_judge_explanations = collect_judge_explanations
         self._run_id = ""
         self._timestamp_utc = ""
@@ -410,7 +421,9 @@ class BenchmarkRunner:
                     "search_mode": rec.get("search_mode", ""),
                     "answer": rec.get("answer", ""),
                     "top_k_chunks": _format_chunk_pairs(chunk_ids, chunk_scores, limit=chunk_limit),
-                    "top_k_chunk_details": _format_chunk_details(chunk_payload_top5, text_limit=_RAG_MAX_CHARS),
+                    "top_k_chunk_details": _format_chunk_details(
+                        chunk_payload_top5, text_limit=_RAG_MAX_CHARS
+                    ),
                     "retrieved_count": rec.get("retrieved_count", 0),
                     "relevant_hits_at_k": rec.get("relevant_hits_at_k", 0),
                     "precision_5": rec.get("precision_5", 0.0),
@@ -433,7 +446,9 @@ class BenchmarkRunner:
             )
 
         review_df = pd.DataFrame(rows)
-        sort_cols = [c for c in ["question_scope", "question", "pipeline"] if c in review_df.columns]
+        sort_cols = [
+            c for c in ["question_scope", "question", "pipeline"] if c in review_df.columns
+        ]
         if sort_cols:
             review_df = review_df.sort_values(sort_cols).reset_index(drop=True)
         return review_df
@@ -502,7 +517,9 @@ class BenchmarkRunner:
                     lines.append("")
                     lines.append("Judge Rationales")
                     lines.append(f"- Faithfulness: {rec.get('faithfulness_rationale', '')}")
-                    lines.append(f"- Comprehensiveness: {rec.get('comprehensiveness_rationale', '')}")
+                    lines.append(
+                        f"- Comprehensiveness: {rec.get('comprehensiveness_rationale', '')}"
+                    )
                     lines.append(f"- Diversity: {rec.get('diversity_rationale', '')}")
                     lines.append(f"- Directness: {rec.get('directness_rationale', '')}")
                     lines.append(f"- Empowerment: {rec.get('empowerment_rationale', '')}")
@@ -548,14 +565,12 @@ class BenchmarkRunner:
 
         embedding_model = ""
         if self.rag is not None and getattr(self.rag, "embedder", None) is not None:
-            embedding_model = (
-                getattr(self.rag.embedder, "model_name", "")
-                or getattr(self.rag.embedder, "model", "")
+            embedding_model = getattr(self.rag.embedder, "model_name", "") or getattr(
+                self.rag.embedder, "model", ""
             )
         elif self.graphrag is not None and getattr(self.graphrag, "embedder", None) is not None:
-            embedding_model = (
-                getattr(self.graphrag.embedder, "model_name", "")
-                or getattr(self.graphrag.embedder, "model", "")
+            embedding_model = getattr(self.graphrag.embedder, "model_name", "") or getattr(
+                self.graphrag.embedder, "model", ""
             )
 
         return {
@@ -565,6 +580,20 @@ class BenchmarkRunner:
             "embedding_model": embedding_model,
         }
 
+    def _serialize_chunks(self, chunks) -> list[dict[str, object]]:
+        """Convert retrieval results into JSON-serializable benchmark payloads."""
+        serialized_chunks: list[dict[str, object]] = []
+        for chunk in chunks or []:
+            serialized_chunks.append(
+                {
+                    "chunk_id": getattr(chunk, "chunk_id", ""),
+                    "text": getattr(chunk, "text", ""),
+                    "score": getattr(chunk, "score", 0.0),
+                    "metadata": getattr(chunk, "metadata", None),
+                }
+            )
+        return serialized_chunks
+
     # ------------------------------------------------------------------
     # Private evaluation helpers
     # ------------------------------------------------------------------
@@ -573,13 +602,23 @@ class BenchmarkRunner:
         """Evaluate standard RAG on one question."""
         t0 = time.perf_counter()
         result = self.rag.query(eq.question, top_k=top_k)
-        latency = time.perf_counter() - t0
+        latency = time.perf_counter() - t0 if self.compute_efficiency_tracking else 0.0
 
         retrieved_ids = [c.chunk_id for c in result.retrieved_chunks]
         relevant = set(eq.relevant_doc_ids)
 
-        context = "\n\n".join(c.text for c in result.retrieved_chunks)
+        needs_context = (
+            self.compute_efficiency_tracking
+            or self.compute_faithfulness
+            or self.compute_quality_judges
+        )
+        context = "\n\n".join(c.text for c in result.retrieved_chunks) if needs_context else ""
         meta = self._get_model_metadata()
+
+        context_char_count = len(context) if self.compute_efficiency_tracking else 0
+        estimated_context_tokens = (
+            _estimate_tokens(context) if self.compute_efficiency_tracking else 0
+        )
 
         rec = EvalRecord(
             run_id=self._run_id,
@@ -594,6 +633,7 @@ class BenchmarkRunner:
             embedding_model=meta["embedding_model"],
             top_k=top_k,
             answer=result.answer,
+            retrieved_chunks=self._serialize_chunks(result.retrieved_chunks),
             latency_s=latency,
             precision_5=precision_at_k(retrieved_ids, relevant, top_k),
             recall_5=recall_at_k(retrieved_ids, relevant, top_k),
@@ -619,8 +659,8 @@ class BenchmarkRunner:
                 sorted({_doc_id_from_chunk_id(cid) for cid in retrieved_ids}),
                 ensure_ascii=False,
             ),
-            context_char_count=len(context),
-            estimated_context_tokens=_estimate_tokens(context),
+            context_char_count=context_char_count,
+            estimated_context_tokens=estimated_context_tokens,
         )
 
         if eq.reference_answer:
@@ -688,7 +728,9 @@ class BenchmarkRunner:
             if rec.faithfulness < 0.5 and rec.relevant_hits_at_k == 0:
                 notes.append("Low faithfulness aligns with no relevant retrieval hit in top-k.")
             if rec.relevant_hits_at_k > 0 and rec.faithfulness < 0.4:
-                notes.append("Potential contradiction: relevant hit exists but faithfulness is low.")
+                notes.append(
+                    "Potential contradiction: relevant hit exists but faithfulness is low."
+                )
             rec.judge_validation_notes = " ".join(notes)
 
         return _validate_record(rec)
@@ -700,19 +742,31 @@ class BenchmarkRunner:
         search_mode = SearchMode(mode)
         t0 = time.perf_counter()
         result = self.graphrag.query(eq.question, mode=search_mode, top_k=top_k)
-        latency = time.perf_counter() - t0
+        latency = time.perf_counter() - t0 if self.compute_efficiency_tracking else 0.0
 
         chunk_results = result.search_result.chunk_results if result.search_result else []
         retrieved_ids = [c.chunk_id for c in chunk_results]
         relevant = set(eq.relevant_doc_ids)
 
-        context_parts = [c.text for c in chunk_results]
-        if result.search_result and result.search_result.graph_context:
-            context_parts.append(result.search_result.graph_context)
-        for summary in (result.search_result.community_summaries if result.search_result else []):
-            context_parts.append(summary)
-        context = "\n\n".join(context_parts)
+        needs_context = (
+            self.compute_efficiency_tracking
+            or self.compute_faithfulness
+            or self.compute_quality_judges
+        )
+        context = ""
+        if needs_context:
+            context_parts = [c.text for c in chunk_results]
+            if result.search_result and result.search_result.graph_context:
+                context_parts.append(result.search_result.graph_context)
+            for summary in result.search_result.community_summaries if result.search_result else []:
+                context_parts.append(summary)
+            context = "\n\n".join(context_parts)
         meta = self._get_model_metadata()
+
+        context_char_count = len(context) if self.compute_efficiency_tracking else 0
+        estimated_context_tokens = (
+            _estimate_tokens(context) if self.compute_efficiency_tracking else 0
+        )
 
         rec = EvalRecord(
             run_id=self._run_id,
@@ -727,6 +781,7 @@ class BenchmarkRunner:
             embedding_model=meta["embedding_model"],
             top_k=top_k,
             answer=result.answer,
+            retrieved_chunks=self._serialize_chunks(chunk_results),
             latency_s=latency,
             precision_5=precision_at_k(retrieved_ids, relevant, top_k),
             recall_5=recall_at_k(retrieved_ids, relevant, top_k),
@@ -752,8 +807,8 @@ class BenchmarkRunner:
                 sorted({_doc_id_from_chunk_id(cid) for cid in retrieved_ids}),
                 ensure_ascii=False,
             ),
-            context_char_count=len(context),
-            estimated_context_tokens=_estimate_tokens(context),
+            context_char_count=context_char_count,
+            estimated_context_tokens=estimated_context_tokens,
         )
 
         if eq.reference_answer:
@@ -821,7 +876,9 @@ class BenchmarkRunner:
             if rec.faithfulness < 0.5 and rec.relevant_hits_at_k == 0:
                 notes.append("Low faithfulness aligns with no relevant retrieval hit in top-k.")
             if rec.relevant_hits_at_k > 0 and rec.faithfulness < 0.4:
-                notes.append("Potential contradiction: relevant hit exists but faithfulness is low.")
+                notes.append(
+                    "Potential contradiction: relevant hit exists but faithfulness is low."
+                )
             rec.judge_validation_notes = " ".join(notes)
 
         return _validate_record(rec)

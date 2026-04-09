@@ -62,6 +62,7 @@ def test_benchmark_writes_jsonl(tmp_path):
     assert len(df) == 1
     assert "run_id" in df.columns
     assert "context_char_count" in df.columns
+    assert "retrieved_chunks" in df.columns
     assert "comprehensiveness" in df.columns
     assert "diversity" in df.columns
     assert "directness" in df.columns
@@ -77,6 +78,8 @@ def test_benchmark_writes_jsonl(tmp_path):
     assert len(lines) == 1
     payload = json.loads(lines[0])
     assert payload["pipeline"] == "rag"
+    assert payload["retrieved_chunks"][0]["chunk_id"] == "d1__c0"
+    assert payload["retrieved_chunks"][0]["text"] == "Some context text"
 
 
 def test_build_human_review_df_and_markdown(tmp_path):

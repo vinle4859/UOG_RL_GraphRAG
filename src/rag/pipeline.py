@@ -34,7 +34,7 @@ except ImportError:  # tqdm is optional
     _tqdm = None  # type: ignore[assignment]
 
 from src.config import get_settings
-from src.data.chunker import Chunk, ChunkingPipeline, TokenChunker
+from src.data.chunker import Chunk, ChunkingPipeline
 from src.data.loader import load_documents
 from src.rag.embedder import BaseEmbedder, get_embedder
 from src.rag.generator import BaseGenerator, get_generator
@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RAGResult:
     """Wraps a generated answer together with the retrieval evidence."""
+
     answer: str
     retrieved_chunks: list[SearchResult]
     query: str
@@ -71,7 +72,7 @@ class RAGPipeline:
     ):
         self.embedder = embedder or get_embedder()
         self.vectorstore = vectorstore or get_vectorstore()
-        self.generator = generator or get_generator()
+        self.generator = generator
         self.retriever = Retriever(embedder=self.embedder, vectorstore=self.vectorstore)
         self.chunker = ChunkingPipeline()
 
@@ -152,7 +153,8 @@ class RAGPipeline:
             docs = [d for d in docs if d.doc_id not in indexed_doc_ids]
             logger.info(
                 "Resume mode: skipping %d already-indexed docs, %d remaining.",
-                len(skipped), len(docs),
+                len(skipped),
+                len(docs),
             )
 
         if not docs:
@@ -194,17 +196,15 @@ class RAGPipeline:
                 batch: list[Chunk] = flat_chunks[i : i + batch_size]
                 ids = [c.chunk_id for c in batch]
                 texts = [c.text for c in batch]
-                metadatas = [
-                    {"doc_id": c.doc_id, "index": c.index, **c.metadata}
-                    for c in batch
-                ]
+                metadatas = [{"doc_id": c.doc_id, "index": c.index, **c.metadata} for c in batch]
                 try:
                     embeddings = self.embedder.embed(texts)
                     self.vectorstore.add(ids, texts, embeddings, metadatas)
                 except Exception:
                     logger.exception(
                         "Batch %d/%d failed — affected doc(s) will be retried next run.",
-                        i // batch_size + 1, total_batches,
+                        i // batch_size + 1,
+                        total_batches,
                     )
                     if progress:
                         progress.update(len(batch))
@@ -248,5 +248,6 @@ class RAGPipeline:
         RAGResult
         """
         retrieved = self.retriever.retrieve(question, top_k=top_k)
+        self.generator = self.generator or get_generator()
         answer = self.generator.generate(question, retrieved)
         return RAGResult(answer=answer, retrieved_chunks=retrieved, query=question)

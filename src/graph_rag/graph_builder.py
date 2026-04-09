@@ -21,14 +21,25 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 
 import networkx as nx
 
-from src.config import GraphStoreType, get_settings
 from src.graph_rag.entity_extractor import Entity, ExtractionResult, Relation
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_text(value: object) -> str:
+    """Normalise optional values from extraction payloads to safe strings."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and math.isnan(value):
+        return ""
+    text = str(value).strip()
+    # XML 1.0 forbids most control chars; keep only tab/newline/carriage.
+    return "".join(ch for ch in text if (ch in "\t\n\r" or ord(ch) >= 0x20))
 
 
 class KnowledgeGraph:
@@ -68,41 +79,54 @@ class KnowledgeGraph:
 
     def _add_entity(self, entity: Entity) -> None:
         """Add or update an entity node."""
-        key = entity.name.strip().lower()
+        name = _clean_text(entity.name)
+        if not name:
+            return
+
+        key = name.lower()
         if key in self._entity_registry:
             return  # already present
         self._entity_registry[key] = entity
         self.graph.add_node(
             key,
-            label=entity.name,
-            entity_type=entity.entity_type,
-            description=entity.description,
+            label=name,
+            entity_type=_clean_text(entity.entity_type),
+            description=_clean_text(entity.description),
         )
 
     def _add_relation(self, relation: Relation) -> None:
         """Add or strengthen a relation edge."""
-        src = relation.source.strip().lower()
-        tgt = relation.target.strip().lower()
+        source = _clean_text(relation.source)
+        target = _clean_text(relation.target)
+        if not source or not target:
+            return
+
+        src = source.lower()
+        tgt = target.lower()
+        relation_type = _clean_text(relation.relation_type)
+        description = _clean_text(relation.description)
+        chunk_id = _clean_text(relation.chunk_id)
 
         # Ensure endpoints exist
         if src not in self.graph:
-            self.graph.add_node(src, label=relation.source, entity_type="UNKNOWN")
+            self.graph.add_node(src, label=source, entity_type="UNKNOWN")
         if tgt not in self.graph:
-            self.graph.add_node(tgt, label=relation.target, entity_type="UNKNOWN")
+            self.graph.add_node(tgt, label=target, entity_type="UNKNOWN")
 
         if self.graph.has_edge(src, tgt):
             # Increment weight and append provenance
             edge = self.graph.edges[src, tgt]
             edge["weight"] = edge.get("weight", 1) + 1
-            edge.setdefault("chunk_ids", []).append(relation.chunk_id)
+            if chunk_id:
+                edge.setdefault("chunk_ids", []).append(chunk_id)
         else:
             self.graph.add_edge(
                 src,
                 tgt,
-                relation_type=relation.relation_type,
-                description=relation.description,
+                relation_type=relation_type,
+                description=description,
                 weight=1,
-                chunk_ids=[relation.chunk_id],
+                chunk_ids=[chunk_id] if chunk_id else [],
             )
 
     # ------------------------------------------------------------------

@@ -47,6 +47,7 @@ Answer:"""
 # Abstract Interface
 # ---------------------------------------------------------------------------
 
+
 class BaseGenerator(ABC):
     """Generate an answer from context + query."""
 
@@ -60,6 +61,7 @@ class BaseGenerator(ABC):
 # OpenAI Generator
 # ---------------------------------------------------------------------------
 
+
 class OpenAIGenerator(BaseGenerator):
     """Generate answers using the OpenAI Chat Completions API."""
 
@@ -71,9 +73,7 @@ class OpenAIGenerator(BaseGenerator):
         self.model = model or settings.llm_model_name
 
     def generate(self, query: str, context_chunks: list[SearchResult]) -> str:
-        context_str = "\n\n".join(
-            f"[{c.chunk_id}] {c.text}" for c in context_chunks
-        )
+        context_str = "\n\n".join(f"[{c.chunk_id}] {c.text}" for c in context_chunks)
         user_msg = RAG_USER_TEMPLATE.format(context=context_str, question=query)
         return self._chat_with_retry(user_msg)
 
@@ -96,6 +96,7 @@ class OpenAIGenerator(BaseGenerator):
 # Ollama Generator (local models)
 # ---------------------------------------------------------------------------
 
+
 class OllamaGenerator(BaseGenerator):
     """Generate answers using a local Ollama server."""
 
@@ -108,36 +109,46 @@ class OllamaGenerator(BaseGenerator):
         logger.info("Using Ollama model: %s at %s", self.model, self.base_url)
 
     def generate(self, query: str, context_chunks: list[SearchResult]) -> str:
-        import requests
+        from src.utils.ollama_client import ollama_post
 
-        context_str = "\n\n".join(
-            f"[{c.chunk_id}] {c.text}" for c in context_chunks
-        )
+        context_str = "\n\n".join(f"[{c.chunk_id}] {c.text}" for c in context_chunks)
+        settings = get_settings()
         prompt = (
             f"{RAG_SYSTEM_PROMPT}\n\n"
             f"{RAG_USER_TEMPLATE.format(context=context_str, question=query)}"
         )
 
-        resp = requests.post(
+        data = ollama_post(
             f"{self.base_url}/api/generate",
-            json={"model": self.model, "prompt": prompt, "stream": False},
-            timeout=120,
+            payload={
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": settings.ollama_generation_temperature,
+                    "seed": settings.ollama_generation_seed,
+                },
+            },
+            read_timeout=settings.ollama_request_timeout,
         )
-        resp.raise_for_status()
-        return resp.json()["response"]
+        return data["response"]
 
 
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
-def get_generator(provider: LLMProvider | None = None) -> BaseGenerator:
+
+def get_generator(
+    provider: LLMProvider | None = None,
+    model: str | None = None,
+) -> BaseGenerator:
     """Create a generator based on configuration."""
     provider = provider or get_settings().llm_provider
 
     if provider == LLMProvider.OPENAI:
-        return OpenAIGenerator()
+        return OpenAIGenerator(model=model)
     elif provider == LLMProvider.OLLAMA:
-        return OllamaGenerator()
+        return OllamaGenerator(model=model)
     else:
         raise NotImplementedError(f"Generator not yet implemented for: {provider}")

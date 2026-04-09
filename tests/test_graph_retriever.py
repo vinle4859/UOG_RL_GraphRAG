@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from src.graph_rag.community import Community
 from src.graph_rag.retriever import GraphRetriever, SearchMode
 from src.rag.vectorstore import SearchResult
 
@@ -14,7 +15,11 @@ from src.rag.vectorstore import SearchResult
 class DummyEmbedder:
     """Deterministic embedder for tests."""
 
+    def __init__(self):
+        self.calls: list[list[str]] = []
+
     def embed(self, texts):
+        self.calls.append(list(texts))
         vectors = []
         for text in texts:
             t = text.lower()
@@ -31,7 +36,11 @@ class DummyEmbedder:
 class DummyVectorStore:
     """Simple in-memory vector store stub for local mode tests."""
 
+    def __init__(self):
+        self.query_calls = 0
+
     def query(self, query_embedding, top_k=5):  # noqa: ARG002
+        self.query_calls += 1
         return [
             SearchResult(
                 chunk_id="doc1__chunk_0",
@@ -86,3 +95,49 @@ class TestGraphRetriever:
         assert len(result.chunk_results) == 1
         assert result.chunk_results[0].chunk_id == "doc1__chunk_0"
         assert "PPO --[is_part_of]--> Reinforcement Learning" in result.graph_context
+
+    def test_graph_only_mode_caches_repeated_queries(self):
+        graph = _build_graph()
+        embedder = DummyEmbedder()
+        retriever = GraphRetriever(
+            graph=graph,
+            communities=[],
+            embedder=embedder,
+            vectorstore=DummyVectorStore(),
+            top_k=1,
+        )
+
+        retriever.retrieve("What is PPO?", mode=SearchMode.GRAPH_ONLY, top_k=1)
+        calls_after_first = len(embedder.calls)
+        retriever.retrieve("What is PPO?", mode=SearchMode.GRAPH_ONLY, top_k=1)
+
+        assert calls_after_first == 2
+        assert len(embedder.calls) == calls_after_first
+
+    def test_hybrid_mode_reuses_cached_local_and_global_results(self):
+        graph = _build_graph()
+        embedder = DummyEmbedder()
+        vectorstore = DummyVectorStore()
+        retriever = GraphRetriever(
+            graph=graph,
+            communities=[
+                Community(
+                    community_id=1, nodes=["ppo"], summary="PPO belongs to reinforcement learning."
+                )
+            ],
+            embedder=embedder,
+            vectorstore=vectorstore,
+            top_k=1,
+        )
+
+        retriever.retrieve("What is PPO?", mode=SearchMode.LOCAL, top_k=1)
+        retriever.retrieve("What is PPO?", mode=SearchMode.GLOBAL, top_k=1)
+        embed_calls_before_hybrid = len(embedder.calls)
+        vector_queries_before_hybrid = vectorstore.query_calls
+
+        result = retriever.retrieve("What is PPO?", mode=SearchMode.HYBRID, top_k=1)
+
+        assert result.chunk_results
+        assert result.community_summaries
+        assert len(embedder.calls) == embed_calls_before_hybrid
+        assert vectorstore.query_calls == vector_queries_before_hybrid
